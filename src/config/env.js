@@ -27,9 +27,21 @@ export const config = Object.freeze({
   isProd: (process.env.NODE_ENV || 'development') === 'production',
   port: getEnvNumber('PORT', 3322),
   
+  // HTTPS/SSL configuration
+  ssl: {
+    enableHttps: getEnvBoolean('ENABLE_HTTPS', true),
+    keyPath: process.env.SSL_KEY_PATH || null,
+    certPath: process.env.SSL_CERT_PATH || null,
+  },
+  
   // Database configuration
   databaseUrl: process.env.DATABASE_URL || 
     'postgres://postgres:postgres@localhost:5432/auto_article',
+
+  // Admin API configuration
+  admin: {
+    apiToken: process.env.ADMIN_API_TOKEN || null,
+  },
   
   // Rate limiting configuration
   rateLimit: {

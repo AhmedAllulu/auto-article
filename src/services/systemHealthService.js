@@ -1,7 +1,7 @@
 import { config, validateConfig } from '../config/env.js';
 import logger from '../lib/logger.js';
 import { pool } from '../db/pool.js';
-import { validateTrendsService, getTrendsStatistics } from './trendsService.js';
+import { validateAITrendsService, getAITrendsStatistics } from './trendsService.js';
 import { getCurrentBudgetStatus } from './budgetMonitorService.js';
 import { generateArticleViaAPI } from './aiClient.js';
 
@@ -302,8 +302,8 @@ class SystemHealthService {
         };
       }
 
-      const validation = await validateTrendsService();
-      const stats = await getTrendsStatistics();
+      const validation = await validateAITrendsService();
+      const stats = await getAITrendsStatistics();
 
       return {
         healthy: validation.healthy,

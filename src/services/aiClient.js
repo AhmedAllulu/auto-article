@@ -130,63 +130,23 @@ function estimateTokenCost(inputTokens, outputTokens, model) {
   return baseCost;
 }
 
-// اختيار موديل ذكي واقتصادي
+// اختيار موديل ثابت واقتصادي: دائماً gpt-4o-mini وبميزانية يومية ثابتة = 4,000,000 / 30
 function selectCostEfficientModel(languageCode, categorySlug, complexity = 'medium', monthlyTokensUsed = 0, monthlyTokenLimit = 4000000) {
-  const remainingTokens = monthlyTokenLimit - monthlyTokensUsed;
-  const daysRemaining = Math.max(1, Math.ceil((new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() - new Date().getDate())));
-  const dailyTokenBudget = remainingTokens / daysRemaining;
-  
-  // تحديد مستوى الأولوية
-  const categoryPriority = COST_EFFICIENT_MODEL_STRATEGY.CONTENT_TYPE_PRIORITY[categorySlug] || 'budget';
-  const languagePriority = COST_EFFICIENT_MODEL_STRATEGY.LANGUAGE_PRIORITY[languageCode] || 'budget';
-  
-  // حساب الأولوية النهائية
-  let finalPriority = 'budget';
-  if (categoryPriority === 'premium' || languagePriority === 'premium') {
-    finalPriority = 'premium';
-  } else if (categoryPriority === 'balanced' || languagePriority === 'balanced') {
-    finalPriority = 'balanced';
-  }
-  
-  // إذا كان الميزانية المتبقية قليلة، استخدم النماذج الاقتصادية فقط
-  if (dailyTokenBudget < 10000) {
-    finalPriority = 'budget';
-    logger.warn({ dailyTokenBudget, remainingTokens }, 'Low token budget - forcing budget models');
-  }
-  
-  // اختيار الموديل حسب الأولوية
-  let selectedModel;
-  
-  if (finalPriority === 'premium') {
-    // إلغاء استخدام الموديلات المكلفة: اختر بدائل اقتصادية احترافية
-    if (complexity === 'high' || categorySlug === 'technology' || categorySlug === 'finance') {
-      selectedModel = AVAILABLE_MODELS.GEMINI_2_5; // دقة أعلى للغات الأوروبية والتقنية مع تكلفة مناسبة
-    } else {
-      selectedModel = AVAILABLE_MODELS.GPT_4O_MINI;
-    }
-  } else if (finalPriority === 'balanced' && Math.random() < 0.25) { // 25% احتمال للنماذج المتوسطة
-    selectedModel = AVAILABLE_MODELS.GEMINI_2_5;
-  } else {
-    // النماذج الاقتصادية (الافتراضية)
-    const random = Math.random();
-    if (random < 0.8) {                // 80% احتمال
-      selectedModel = AVAILABLE_MODELS.GPT_4O_MINI;
-    } else if (random < 0.95) {        // 15% احتمال
-      selectedModel = AVAILABLE_MODELS.MISTRAL_NEMO;
-    } else {                           // 5% احتمال
-      selectedModel = AVAILABLE_MODELS.GEMINI_2_5;
-    }
-  }
-  
+  // فرض ميزانية يومية ثابتة بغض النظر عن الاستخدام
+  const forcedDailyTokenBudget = Math.floor(monthlyTokenLimit / 30);
+  const remainingTokens = Math.max(0, monthlyTokenLimit - monthlyTokensUsed);
+
+  const selectedModel = AVAILABLE_MODELS.GPT_4O_MINI;
+
   logger.info({
     languageCode,
     categorySlug,
     complexity,
-    categoryPriority,
-    languagePriority,
-    finalPriority,
+    categoryPriority: 'forced-budget',
+    languagePriority: 'forced-budget',
+    finalPriority: 'budget',
     selectedModel,
-    dailyTokenBudget,
+    dailyTokenBudget: forcedDailyTokenBudget,
     remainingTokens
   }, 'Model selected with cost optimization');
   
@@ -448,6 +408,48 @@ Mastering ${topic} requires consistent effort and strategic approach. Follow the
     
     if (!metaDescription) {
       metaDescription = summary.slice(0, 160);
+    }
+
+    // Cleanup: strip front-matter (Title/Meta/Summary and horizontal rule) from articleContent
+    try {
+      const allLines = content.split('\n');
+      let startIdx = 0;
+      const isMetaHeading = (line) => /^##\s+(meta\s+description|summary)\b/i.test(line.trim());
+      
+      for (let i = 0; i < allLines.length; i++) {
+        const line = allLines[i];
+        if (/^---\s*$/.test(line.trim())) {
+          startIdx = i + 1; // keep after horizontal rule
+          break;
+        }
+        if (/^##\s+/.test(line.trim())) {
+          if (!isMetaHeading(line)) {
+            startIdx = i; // first real H2/H3 section
+            break;
+          }
+        }
+      }
+      const kept = allLines.slice(startIdx);
+      // Trim leading blank lines
+      while (kept.length && kept[0].trim() === '') kept.shift();
+      articleContent = kept.join('\n').trim() || content.trim();
+      
+      // If content still starts with a stray '# Title' header, drop it and the immediate next line
+      if (/^#\s*Title\b/i.test(articleContent)) {
+        const tmp = articleContent.split('\n');
+        // Remove the '# Title' line
+        tmp.shift();
+        // If next line is a short standalone title/blank, remove it as well
+        if (tmp.length && tmp[0].trim().length > 0 && !/^#|^##/.test(tmp[0])) {
+          tmp.shift();
+        }
+        // Remove leading blanks
+        while (tmp.length && tmp[0].trim() === '') tmp.shift();
+        articleContent = tmp.join('\n').trim() || articleContent;
+      }
+    } catch (_) {
+      // On any parsing error, keep original content
+      articleContent = content;
     }
 
     const tokensIn = Number(usage.prompt_tokens || roughTokenEstimate(prompt, selectedModel, 'input'));

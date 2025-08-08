@@ -35,9 +35,9 @@ class BudgetMonitorService {
     const expectedUsageByDay = (daysElapsed / lastDayOfMonth) * monthlyLimit;
     const usageEfficiency = expectedUsageByDay > 0 ? (usedTokens / expectedUsageByDay) * 100 : 0;
     
-    // حساب الميزانيات اليومية
-    const plannedDailyBudget = Math.floor(monthlyLimit / lastDayOfMonth);
-    const remainingDailyBudget = Math.floor(remainingTokens / daysRemaining);
+    // حساب الميزانيات اليومية (ثابتة = شهري/30)
+    const plannedDailyBudget = Math.floor(monthlyLimit / 30);
+    const remainingDailyBudget = Math.floor(monthlyLimit / 30);
     const actualDailyUsage = daysElapsed > 0 ? Math.floor(usedTokens / daysElapsed) : 0;
     
     // توقع نهاية الشهر
@@ -405,7 +405,7 @@ export function startBudgetMonitoring() {
   });
   
   // فحص دوري كل 15 دقيقة
-  cron.schedule('*/15 * * * *', async () => {
+  const intervalTask = cron.schedule('*/15 * * * *', async () => {
     try {
       await budgetMonitor.checkBudgetAndAlert();
     } catch (err) {
@@ -414,7 +414,7 @@ export function startBudgetMonitoring() {
   });
   
   // تقرير يومي في الساعة 9 صباحاً
-  cron.schedule('0 9 * * *', async () => {
+  const dailyTask = cron.schedule('0 9 * * *', async () => {
     try {
       const stats = await budgetMonitor.calculateBudgetStats();
       const report = budgetMonitor.generateBudgetReport(stats);
@@ -424,6 +424,8 @@ export function startBudgetMonitoring() {
       logger.error({ err }, 'Daily budget report failed');
     }
   });
+
+  return { intervalTask, dailyTask };
 }
 
 // دالة للحصول على حالة الميزانية

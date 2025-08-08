@@ -14,8 +14,9 @@ export async function query(sql, params) {
   const start = Date.now();
   const res = await pool.query(sql, params);
   const duration = Date.now() - start;
-  if (duration > 200) {
-    logger.info({ duration, rowCount: res.rowCount }, 'slow query');
+  const slowThreshold = config.monitoring?.slowQueryThreshold ?? 500;
+  if (duration > slowThreshold) {
+    logger.warn({ duration, rowCount: res.rowCount }, 'slow query');
   }
   return res;
 }

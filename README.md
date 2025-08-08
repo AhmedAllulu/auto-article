@@ -62,7 +62,7 @@ MONTHLY_TOKEN_CAP=4000000
 # الوضع الاقتصادي (مُفعل افتراضياً)
 BUDGET_MODE=true
 PREMIUM_CONTENT_PERCENTAGE=20
-ENABLE_WEB_SEARCH=false
+ENABLE_WEB_SEARCH=true
 WEB_SEARCH_HIGH_VALUE_ONLY=true
 
 # إعدادات الموديل الاقتصادية

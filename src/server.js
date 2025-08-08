@@ -1,10 +1,15 @@
 import express from 'express';
+import fs from 'fs';
+import http from 'http';
+import https from 'https';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
 import cors from 'cors';
+import swaggerUi from 'swagger-ui-express';
 import { rateLimiterMiddleware } from './middleware/rateLimiter.js';
 import logger from './lib/logger.js';
 import config, { validateConfig, calculateEstimatedMonthlyCost } from './config/env.js';
+import { specs } from './swagger.js';
 
 // Routes
 import articlesRouter from './routes/articles.js';
@@ -15,7 +20,7 @@ import healthRouter from './routes/health.js';
 import { scheduleArticleGeneration } from './services/articleGeneratorService.js';
 import { startBudgetMonitoring, getCurrentBudgetStatus, getBudgetReport } from './services/budgetMonitorService.js';
 import { systemHealth, quickHealthCheck } from './services/systemHealthService.js';
-import { validateTrendsService, getTrendsStatistics } from './services/trendsService.js';
+import { validateAITrendsService, getAITrendsStatistics } from './services/trendsService.js';
 
 // Initialize environment
 dotenv.config();
@@ -50,6 +55,12 @@ app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 // Rate limiting
 app.use(rateLimiterMiddleware);
 
+// Swagger documentation
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs, {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'Auto Article API Documentation'
+}));
+
 // Request logging middleware
 app.use((req, res, next) => {
   const start = Date.now();
@@ -67,6 +78,38 @@ app.use((req, res, next) => {
   next();
 });
 
+/**
+ * @swagger
+ * /health:
+ *   get:
+ *     summary: Quick health check
+ *     description: Basic health check endpoint for load balancers and monitoring
+ *     tags: [Health]
+ *     responses:
+ *       200:
+ *         description: Server is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   enum: [HEALTHY, WARNING, CRITICAL]
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                 checks:
+ *                   type: object
+ *                 uptime:
+ *                   type: number
+ *       503:
+ *         description: Server is unhealthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Health check endpoint (quick check for load balancers)
 app.get('/health', async (req, res) => {
   try {
@@ -92,17 +135,51 @@ app.get('/health', async (req, res) => {
 
 // Admin endpoints (with basic auth in production)
 const adminAuth = (req, res, next) => {
-  if (config.isProd) {
-    const auth = req.get('Authorization');
-    if (!auth || !auth.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    // In production, verify the token here
-    // For now, we'll accept any bearer token
+  if (!config.isProd) return next();
+
+  // In production, require a valid static admin token
+  const requiredToken = config.admin?.apiToken || process.env.ADMIN_API_TOKEN || null;
+  if (!requiredToken) {
+    return res.status(503).json({ error: 'Admin API disabled: ADMIN_API_TOKEN not configured' });
+  }
+
+  const auth = req.get('Authorization') || '';
+  const provided = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : null;
+  if (!provided || provided !== requiredToken) {
+    return res.status(401).json({ error: 'Unauthorized' });
   }
   next();
 };
 
+/**
+ * @swagger
+ * /admin/budget:
+ *   get:
+ *     summary: Get budget report
+ *     description: Retrieve detailed budget and token usage report for the current month
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Budget report retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/BudgetReport'
+ *       401:
+ *         description: Unauthorized - Invalid or missing API token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Budget monitoring endpoints
 app.get('/admin/budget', adminAuth, async (req, res) => {
   try {
@@ -114,6 +191,48 @@ app.get('/admin/budget', adminAuth, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /admin/budget/status:
+ *   get:
+ *     summary: Get budget status
+ *     description: Get current budget status and remaining tokens
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Budget status retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 currentTokens:
+ *                   type: number
+ *                   description: Current token usage this month
+ *                 monthlyCap:
+ *                   type: number
+ *                   description: Monthly token cap
+ *                 remainingTokens:
+ *                   type: number
+ *                   description: Remaining tokens for the month
+ *                 utilization:
+ *                   type: number
+ *                   description: Token utilization percentage
+ *       401:
+ *         description: Unauthorized - Invalid or missing API token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.get('/admin/budget/status', adminAuth, async (req, res) => {
   try {
     const status = await getCurrentBudgetStatus();
@@ -124,6 +243,35 @@ app.get('/admin/budget/status', adminAuth, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /admin/health/full:
+ *   get:
+ *     summary: Full system health check
+ *     description: Comprehensive system health check including database, services, and dependencies
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Full health check completed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HealthCheck'
+ *       401:
+ *         description: Unauthorized - Invalid or missing API token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // System health endpoints
 app.get('/admin/health/full', adminAuth, async (req, res) => {
   try {
@@ -137,6 +285,48 @@ app.get('/admin/health/full', adminAuth, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /admin/health/stats:
+ *   get:
+ *     summary: Get health statistics
+ *     description: Retrieve system health statistics and metrics
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Health statistics retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 uptime:
+ *                   type: number
+ *                   description: Server uptime in seconds
+ *                 memory:
+ *                   type: object
+ *                   description: Memory usage statistics
+ *                 cpu:
+ *                   type: object
+ *                   description: CPU usage statistics
+ *                 database:
+ *                   type: object
+ *                   description: Database connection statistics
+ *       401:
+ *         description: Unauthorized - Invalid or missing API token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 app.get('/admin/health/stats', adminAuth, async (req, res) => {
   try {
     const stats = systemHealth.getHealthStats();
@@ -147,6 +337,45 @@ app.get('/admin/health/stats', adminAuth, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /admin/config:
+ *   get:
+ *     summary: Get system configuration
+ *     description: Retrieve current system configuration and cost estimates
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Configuration retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 validation:
+ *                   type: object
+ *                   description: Configuration validation results
+ *                 costEstimate:
+ *                   type: object
+ *                   description: Monthly cost estimates
+ *                 currentConfig:
+ *                   type: object
+ *                   description: Current system configuration
+ *       401:
+ *         description: Unauthorized - Invalid or missing API token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Configuration and cost estimation endpoint
 app.get('/admin/config', adminAuth, async (req, res) => {
   try {
@@ -171,6 +400,41 @@ app.get('/admin/config', adminAuth, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /admin/generate:
+ *   post:
+ *     summary: Manually trigger article generation
+ *     description: Manually trigger the generation of articles with optional parameters
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/GenerationRequest'
+ *     responses:
+ *       200:
+ *         description: Article generation completed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/GenerationResponse'
+ *       401:
+ *         description: Unauthorized - Invalid or missing API token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Manual generation trigger (admin only)
 app.post('/admin/generate', adminAuth, async (req, res) => {
   try {
@@ -253,15 +517,7 @@ app.use((req, res) => {
 
 const port = config.port;
 
-// Graceful shutdown handling
-const shutdown = (signal) => {
-  logger.info({ signal }, 'Received shutdown signal');
-  
-  process.exit(0);
-};
-
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+// (Replaced below) Graceful shutdown is configured after server start
 
 // Startup sequence
 async function startServer() {
@@ -295,7 +551,7 @@ async function startServer() {
     // Test trends service if enabled
     if (config.trends.enabled) {
       try {
-        const trendsValidation = await validateTrendsService();
+        const trendsValidation = await validateAITrendsService();
         if (trendsValidation.healthy) {
           logger.info('Google Trends service validated successfully');
         } else {
@@ -322,26 +578,48 @@ async function startServer() {
       }, 'Daily target may exceed monthly budget - consider adjustment');
     }
 
-    // 5. Start HTTP server
-    const server = app.listen(port, () => {
-      logger.info({ port }, 'HTTP server started successfully');
-    });
+    // 5. Start server (HTTPS if configured and certs available; otherwise HTTP)
+    let server;
+    const sslKeyPath = config.ssl?.keyPath || process.env.SSL_KEY_PATH;
+    const sslCertPath = config.ssl?.certPath || process.env.SSL_CERT_PATH;
+    const enableHttps = config.ssl?.enableHttps !== false; // default true
+
+    if (enableHttps && sslKeyPath && sslCertPath) {
+      try {
+        const options = {
+          key: fs.readFileSync(sslKeyPath),
+          cert: fs.readFileSync(sslCertPath),
+        };
+        server = https.createServer(options, app).listen(port, () => {
+          logger.info({ port, sslKeyPath, sslCertPath }, 'HTTPS server started successfully');
+        });
+      } catch (err) {
+        logger.error({ err, sslKeyPath, sslCertPath }, 'Failed to start HTTPS server, falling back to HTTP');
+        server = http.createServer(app).listen(port, () => {
+          logger.info({ port }, 'HTTP server started successfully');
+        });
+      }
+    } else {
+      server = http.createServer(app).listen(port, () => {
+        logger.info({ port }, 'HTTP server started successfully');
+      });
+    }
 
     // 6. Start background services
     logger.info('Starting background services...');
     
     // Start budget monitoring
-    startBudgetMonitoring();
+    const { intervalTask, dailyTask } = startBudgetMonitoring();
     logger.info('Budget monitoring service started');
 
     // Start article generation scheduler
-    scheduleArticleGeneration();
+    const generationTask = scheduleArticleGeneration();
     logger.info('Article generation scheduler started');
 
     // If trends cache is already warm at startup, trigger a small immediate generation
     setTimeout(async () => {
       try {
-        const trendsStats = await getTrendsStatistics();
+        const trendsStats = await getAITrendsStatistics();
         if (trendsStats.cacheSize && trendsStats.cacheSize > 0) {
           logger.info({ cacheSize: trendsStats.cacheSize }, 'Trends cache detected at startup; triggering immediate generation');
           const { triggerProfitableGeneration } = await import('./services/articleGeneratorService.js');
@@ -373,6 +651,25 @@ async function startServer() {
     server.on('close', () => {
       logger.info('HTTP server closed');
     });
+
+    const cleanup = async () => {
+      try {
+        logger.info('Cleaning up background tasks...');
+        try { generationTask?.stop(); } catch (_) {}
+        try { intervalTask?.stop(); } catch (_) {}
+        try { dailyTask?.stop(); } catch (_) {}
+        const { pool } = await import('./db/pool.js');
+        try { await pool.end(); } catch (_) {}
+        logger.info('Cleanup complete');
+      } catch (err) {
+        logger.error({ err }, 'Cleanup failed');
+      } finally {
+        process.exit(0);
+      }
+    };
+
+    process.on('SIGTERM', cleanup);
+    process.on('SIGINT', cleanup);
 
     logger.info({
       environment: config.nodeEnv,
