@@ -2,128 +2,255 @@ import axios from 'axios';
 import config from '../config/env.js';
 import logger from '../lib/logger.js';
 
-// Available models on 1min.ai platform
+// Available models مرتبة حسب التكلفة (من الأرخص للأغلى)
 const AVAILABLE_MODELS = {
-  // Text Generation Models
-  GPT_4O_MINI: 'gpt-4o-mini',
-  GPT_4O: 'gpt-4o',
-  CLAUDE_SONNET_4: 'claude-sonnet-4',
-  CLAUDE_OPUS_4: 'claude-opus-4',
-  LLAMA_4: 'llama-4',
-  GEMINI_2_5: 'gemini-2.5',
-  DEEPSEEK_CHAT: 'deepseek-chat',
-  MISTRAL_NEMO: 'mistral-nemo',
+  // Cost-effective models (أولوية للاستخدام)
+  GPT_4O_MINI: 'gpt-4o-mini',        // الأرخص - للمقالات البسيطة
+  GEMINI_2_5: 'gemini-2.5',           // متوسط التكلفة - جيد للغات المتعددة
+  MISTRAL_NEMO: 'mistral-nemo',       // اقتصادي - جيد للمحتوى العام
   
-  // Image Generation Models
+  // Premium models (استخدام محدود)
+  GPT_4O: 'gpt-4o',                   // مكلف - للمحتوى المتقدم فقط
+  CLAUDE_SONNET_4: 'claude-sonnet-4', // مكلف جداً - للمحتوى التقني فقط
+  CLAUDE_OPUS_4: 'claude-opus-4',     // الأغلى - للمحتوى الممتاز فقط
+  
+  // Specialized models
+  DEEPSEEK_CHAT: 'deepseek-chat',
+  LLAMA_4: 'llama-4',
+  
+  // Image models (معطل حالياً)
   MIDJOURNEY: 'midjourney',
   DALL_E_3: 'dall-e-3',
   STABLE_DIFFUSION: 'stable-diffusion'
 };
 
-// API Types available
-const API_TYPES = {
-  CHAT_WITH_AI: 'CHAT_WITH_AI',
-  CHAT_WITH_IMAGE: 'CHAT_WITH_IMAGE',
-  IMAGE_GENERATOR: 'IMAGE_GENERATOR',
-  WEB_SEARCH: 'WEB_SEARCH',
-  DOCUMENT_ANALYSIS: 'DOCUMENT_ANALYSIS'
+// 1min.ai provider model mapping
+function mapProviderModelName(selectedModel) {
+  // Known working default on 1min.ai
+  const FALLBACK = AVAILABLE_MODELS.GPT_4O_MINI;
+  // Map internal names to provider-supported identifiers
+  const MAP = {
+    [AVAILABLE_MODELS.GPT_4O_MINI]: 'gpt-4o-mini',
+    [AVAILABLE_MODELS.GEMINI_2_5]: 'gpt-4o-mini',
+    [AVAILABLE_MODELS.MISTRAL_NEMO]: 'gpt-4o-mini',
+    [AVAILABLE_MODELS.GPT_4O]: 'gpt-4o-mini',
+    [AVAILABLE_MODELS.CLAUDE_SONNET_4]: 'gpt-4o-mini',
+    [AVAILABLE_MODELS.CLAUDE_OPUS_4]: 'gpt-4o-mini',
+    [AVAILABLE_MODELS.DEEPSEEK_CHAT]: 'gpt-4o-mini',
+    [AVAILABLE_MODELS.LLAMA_4]: 'gpt-4o-mini'
+  };
+  return MAP[selectedModel] || FALLBACK;
+}
+
+// استراتيجية اختيار الموديل الاقتصادية
+const COST_EFFICIENT_MODEL_STRATEGY = {
+  // 80% من المقالات تستخدم النماذج الاقتصادية
+  BUDGET_MODELS: [
+    AVAILABLE_MODELS.GPT_4O_MINI,    // 50% من الإجمالي
+    AVAILABLE_MODELS.GEMINI_2_5,     // 20% من الإجمالي  
+    AVAILABLE_MODELS.MISTRAL_NEMO    // 10% من الإجمالي
+  ],
+  
+  // 20% فقط للنماذج المتقدمة (للمحتوى عالي القيمة)
+  PREMIUM_MODELS: [
+    AVAILABLE_MODELS.GPT_4O,         // 15% من الإجمالي
+    AVAILABLE_MODELS.CLAUDE_SONNET_4 // 5% من الإجمالي
+  ],
+  
+  // أولويات حسب نوع المحتوى
+  CONTENT_TYPE_PRIORITY: {
+    'technology': 'premium',    // تقنية = محتوى عالي القيمة
+    'finance': 'premium',       // مالية = محتوى عالي القيمة
+    'business': 'premium',      // أعمال = محتوى عالي القيمة
+    'health': 'balanced',       // صحة = متوازن
+    'sports': 'budget',         // رياضة = اقتصادي
+    'entertainment': 'budget',  // ترفيه = اقتصادي
+    'travel': 'budget'          // سفر = اقتصادي
+  },
+  
+  // أولويات حسب اللغة (حسب معدل الربح)
+  LANGUAGE_PRIORITY: {
+    'en': 'premium',    // إنجليزية = أعلى ربح
+    'de': 'premium',    // ألمانية = ربح عالي
+    'fr': 'balanced',   // فرنسية = ربح متوسط
+    'es': 'balanced',   // إسبانية = ربح متوسط
+    'pt': 'budget',     // برتغالية = ربح منخفض
+    'ar': 'budget',     // عربية = ربح منخفض
+    'hi': 'budget'      // هندية = ربح منخفض
+  }
 };
 
-// Language-specific model recommendations for better output quality
+// تقدير توكنز أكثر دقة حسب الموديل
+const TOKEN_ESTIMATION_BY_MODEL = {
+  [AVAILABLE_MODELS.GPT_4O_MINI]: {
+    inputDivisor: 4.0,
+    outputDivisor: 4.0,
+    costMultiplier: 1.0      // مرجع التكلفة
+  },
+  [AVAILABLE_MODELS.GEMINI_2_5]: {
+    inputDivisor: 3.8,
+    outputDivisor: 3.8,
+    costMultiplier: 1.2
+  },
+  [AVAILABLE_MODELS.MISTRAL_NEMO]: {
+    inputDivisor: 4.2,
+    outputDivisor: 4.2,
+    costMultiplier: 1.1
+  },
+  [AVAILABLE_MODELS.GPT_4O]: {
+    inputDivisor: 4.0,
+    outputDivisor: 4.0,
+    costMultiplier: 8.0      // أغلى بـ 8 مرات
+  },
+  [AVAILABLE_MODELS.CLAUDE_SONNET_4]: {
+    inputDivisor: 3.5,
+    outputDivisor: 3.5,
+    costMultiplier: 12.0     // أغلى بـ 12 مرة
+  },
+  [AVAILABLE_MODELS.CLAUDE_OPUS_4]: {
+    inputDivisor: 3.0,
+    outputDivisor: 3.0,
+    costMultiplier: 25.0     // أغلى بـ 25 مرة
+  }
+};
+
+function roughTokenEstimate(text, model = AVAILABLE_MODELS.GPT_4O_MINI, type = 'output') {
+  if (!text) return 0;
+  
+  const modelConfig = TOKEN_ESTIMATION_BY_MODEL[model] || TOKEN_ESTIMATION_BY_MODEL[AVAILABLE_MODELS.GPT_4O_MINI];
+  const divisor = type === 'input' ? modelConfig.inputDivisor : modelConfig.outputDivisor;
+  
+  return Math.ceil(text.length / divisor);
+}
+
+// دالة تقدير التكلفة المالية (للمراقبة)
+function estimateTokenCost(inputTokens, outputTokens, model) {
+  const modelConfig = TOKEN_ESTIMATION_BY_MODEL[model] || TOKEN_ESTIMATION_BY_MODEL[AVAILABLE_MODELS.GPT_4O_MINI];
+  const baseCost = (inputTokens + outputTokens) * modelConfig.costMultiplier;
+  return baseCost;
+}
+
+// اختيار موديل ذكي واقتصادي
+function selectCostEfficientModel(languageCode, categorySlug, complexity = 'medium', monthlyTokensUsed = 0, monthlyTokenLimit = 4000000) {
+  const remainingTokens = monthlyTokenLimit - monthlyTokensUsed;
+  const daysRemaining = Math.max(1, Math.ceil((new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() - new Date().getDate())));
+  const dailyTokenBudget = remainingTokens / daysRemaining;
+  
+  // تحديد مستوى الأولوية
+  const categoryPriority = COST_EFFICIENT_MODEL_STRATEGY.CONTENT_TYPE_PRIORITY[categorySlug] || 'budget';
+  const languagePriority = COST_EFFICIENT_MODEL_STRATEGY.LANGUAGE_PRIORITY[languageCode] || 'budget';
+  
+  // حساب الأولوية النهائية
+  let finalPriority = 'budget';
+  if (categoryPriority === 'premium' || languagePriority === 'premium') {
+    finalPriority = 'premium';
+  } else if (categoryPriority === 'balanced' || languagePriority === 'balanced') {
+    finalPriority = 'balanced';
+  }
+  
+  // إذا كان الميزانية المتبقية قليلة، استخدم النماذج الاقتصادية فقط
+  if (dailyTokenBudget < 10000) {
+    finalPriority = 'budget';
+    logger.warn({ dailyTokenBudget, remainingTokens }, 'Low token budget - forcing budget models');
+  }
+  
+  // اختيار الموديل حسب الأولوية
+  let selectedModel;
+  
+  if (finalPriority === 'premium') {
+    // إلغاء استخدام الموديلات المكلفة: اختر بدائل اقتصادية احترافية
+    if (complexity === 'high' || categorySlug === 'technology' || categorySlug === 'finance') {
+      selectedModel = AVAILABLE_MODELS.GEMINI_2_5; // دقة أعلى للغات الأوروبية والتقنية مع تكلفة مناسبة
+    } else {
+      selectedModel = AVAILABLE_MODELS.GPT_4O_MINI;
+    }
+  } else if (finalPriority === 'balanced' && Math.random() < 0.25) { // 25% احتمال للنماذج المتوسطة
+    selectedModel = AVAILABLE_MODELS.GEMINI_2_5;
+  } else {
+    // النماذج الاقتصادية (الافتراضية)
+    const random = Math.random();
+    if (random < 0.8) {                // 80% احتمال
+      selectedModel = AVAILABLE_MODELS.GPT_4O_MINI;
+    } else if (random < 0.95) {        // 15% احتمال
+      selectedModel = AVAILABLE_MODELS.MISTRAL_NEMO;
+    } else {                           // 5% احتمال
+      selectedModel = AVAILABLE_MODELS.GEMINI_2_5;
+    }
+  }
+  
+  logger.info({
+    languageCode,
+    categorySlug,
+    complexity,
+    categoryPriority,
+    languagePriority,
+    finalPriority,
+    selectedModel,
+    dailyTokenBudget,
+    remainingTokens
+  }, 'Model selected with cost optimization');
+  
+  return selectedModel;
+}
+
+// Language-specific model recommendations (مع التركيز على الاقتصاد)
 const LANGUAGE_MODEL_MAP = {
-  'en': AVAILABLE_MODELS.GPT_4O,
-  'es': AVAILABLE_MODELS.GPT_4O,
-  'de': AVAILABLE_MODELS.CLAUDE_SONNET_4,
-  'fr': AVAILABLE_MODELS.CLAUDE_SONNET_4,
-  'ar': AVAILABLE_MODELS.GEMINI_2_5,
-  'hi': AVAILABLE_MODELS.GEMINI_2_5,
-  'pt': AVAILABLE_MODELS.GPT_4O,
-  // Fallback
+  'en': AVAILABLE_MODELS.GPT_4O_MINI,    // إنجليزية = gpt-4o-mini (اقتصادي)
+  'es': AVAILABLE_MODELS.GPT_4O_MINI,    // إسبانية = gpt-4o-mini
+  'de': AVAILABLE_MODELS.GEMINI_2_5,     // ألمانية = gemini (أفضل للألمانية)
+  'fr': AVAILABLE_MODELS.GEMINI_2_5,     // فرنسية = gemini
+  'ar': AVAILABLE_MODELS.GEMINI_2_5,     // عربية = gemini (أفضل للعربية)
+  'hi': AVAILABLE_MODELS.GEMINI_2_5,     // هندية = gemini
+  'pt': AVAILABLE_MODELS.GPT_4O_MINI,    // برتغالية = gpt-4o-mini
   'default': AVAILABLE_MODELS.GPT_4O_MINI
 };
 
-// Professional writing styles for different content types
+// Professional writing styles محسنة للاقتصاد
 const WRITING_STYLES = {
   SEO_ARTICLE: {
     tone: 'professional, authoritative, engaging',
     structure: 'SEO-optimized with clear headings, subheadings, and natural keyword integration',
-    wordCount: '1200-2000 words',
-    features: 'meta descriptions, compelling titles, actionable insights'
+    wordCount: '1000-1500 words',  // مخفض من 1200-2000
+    features: 'meta descriptions, compelling titles, actionable insights',
+    maxTokens: 2500                // حد أقصى للتوكنز
   },
   NEWS_ARTICLE: {
     tone: 'objective, informative, timely',
     structure: 'inverted pyramid with lead, body, and conclusion',
-    wordCount: '800-1200 words',
-    features: 'factual reporting, quotes, credible sources'
+    wordCount: '600-1000 words',   // مخفض من 800-1200
+    features: 'factual reporting, quotes, credible sources',
+    maxTokens: 2000
   },
   BLOG_POST: {
     tone: 'conversational, helpful, engaging',
     structure: 'introduction, main points with examples, conclusion with CTA',
-    wordCount: '1000-1500 words',
-    features: 'personal insights, practical tips, reader engagement'
+    wordCount: '800-1200 words',   // مخفض من 1000-1500
+    features: 'personal insights, practical tips, reader engagement',
+    maxTokens: 2200
   },
   TECHNICAL_GUIDE: {
     tone: 'technical, precise, instructional',
     structure: 'step-by-step format with code examples and explanations',
-    wordCount: '1500-2500 words',
-    features: 'technical accuracy, examples, troubleshooting tips'
+    wordCount: '1200-1800 words', // مخفض من 1500-2500
+    features: 'technical accuracy, examples, troubleshooting tips',
+    maxTokens: 3000
   }
 };
 
-function roughTokenEstimate(text, languageCode = 'en') {
-  if (!text) return 0;
-  const length = text.length;
-  // More accurate token estimation based on language characteristics
-  const divisors = {
-    'ar': 2.2,  // Arabic uses more tokens per character
-    'hi': 2.5,  // Hindi/Devanagari script
-    'zh': 1.5,  // Chinese characters
-    'ja': 1.8,  // Japanese
-    'ko': 2.0,  // Korean
-    'default': 4.0  // Most Latin script languages
-  };
-  
-  const divisor = divisors[languageCode] || divisors.default;
-  return Math.ceil(length / divisor);
-}
-
-function selectOptimalModel(languageCode, contentType = 'article', complexity = 'medium') {
-  // Select model based on language, content type, and complexity
-  const baseModel = LANGUAGE_MODEL_MAP[languageCode] || LANGUAGE_MODEL_MAP.default;
-  
-  // For high complexity content, prefer more powerful models
-  if (complexity === 'high' || contentType === 'technical') {
-    return AVAILABLE_MODELS.CLAUDE_OPUS_4;
-  }
-  
-  // For creative content, prefer models good at creative writing
-  if (contentType === 'creative' || contentType === 'marketing') {
-    return AVAILABLE_MODELS.GPT_4O;
-  }
-  
-  // For multilingual content, prefer Gemini
-  if (['ar', 'hi', 'zh', 'ja', 'ko'].includes(languageCode)) {
-    return AVAILABLE_MODELS.GEMINI_2_5;
-  }
-  
-  return baseModel;
-}
-
-function buildAdvancedPrompt({ 
+function buildOptimizedPrompt({ 
   topic, 
   languageCode, 
   categoryName, 
   contentType = 'SEO_ARTICLE',
   targetAudience = 'general web readers',
   keywords = [],
-  includeWebSearch = true,
-  maxWords = 2000
+  maxWords = 1500    // مخفض من 2000
 }) {
   const style = WRITING_STYLES[contentType] || WRITING_STYLES.SEO_ARTICLE;
   
   const languageNames = {
     'en': 'English',
-    'es': 'Spanish',
+    'es': 'Spanish', 
     'de': 'German',
     'fr': 'French',
     'ar': 'Arabic',
@@ -133,47 +260,29 @@ function buildAdvancedPrompt({
   
   const languageName = languageNames[languageCode] || 'English';
   
-  // Build comprehensive, professional prompt
+  // بناء prompt محسن ومختصر لتوفير التوكنز
   const prompt = [
-    `## Content Creation Brief`,
-    `**Language**: ${languageName} (${languageCode})`,
+    `# Content Brief`,
+    `**Language**: ${languageName}`,
     `**Topic**: ${topic}`,
+    `**Type**: ${contentType.replace('_', ' ')}`,
     `**Category**: ${categoryName}`,
-    `**Content Type**: ${contentType.replace('_', ' ')}`,
-    `**Target Audience**: ${targetAudience}`,
-    `**Maximum Words**: ${maxWords}`,
+    `**Max Words**: ${maxWords}`,
+    `**Target**: ${targetAudience}`,
     '',
-    `## Writing Requirements`,
-    `**Tone & Style**: ${style.tone}`,
-    `**Structure**: ${style.structure}`,
-    `**Word Count**: ${style.wordCount}`,
-    `**Key Features**: ${style.features}`,
+    `## Requirements`,
+    `- **Style**: ${style.tone}`,
+    `- **Structure**: ${style.structure}`,
+    `- **Features**: ${style.features}`,
+    keywords.length > 0 ? `- **Keywords**: ${keywords.slice(0, 5).join(', ')}` : '',
     '',
-    `## Content Guidelines`,
-    `1. **SEO Optimization**: Use natural keyword integration, semantic keywords, and LSI terms`,
-    `2. **Readability**: Write for ${targetAudience} with clear, scannable formatting`,
-    `3. **Structure**: Use H2/H3 headings, bullet points, numbered lists, and short paragraphs`,
-    `4. **Value-Driven**: Provide actionable insights, practical tips, and genuine value`,
-    `5. **Originality**: Create unique, plagiarism-free content with fresh perspectives`,
-    `6. **Engagement**: Include compelling introduction, engaging examples, and strong conclusion`,
-    '',
-    keywords.length > 0 ? `## Target Keywords\n${keywords.join(', ')}\n` : '',
     `## Output Format`,
-    `Please provide:`,
-    `1. **Compelling Title** (50-60 characters, SEO-optimized)`,
-    `2. **Meta Description** (150-160 characters)`,
-    `3. **Article Summary** (2-3 sentences)`,
-    `4. **Full Article Content** with proper H2/H3 structure`,
-    `5. **Key Takeaways** (3-5 bullet points)`,
+    `1. **Title** (50-60 chars)`,
+    `2. **Meta Description** (150 chars)`, 
+    `3. **Summary** (2-3 sentences)`,
+    `4. **Article** with H2/H3 structure`,
     '',
-    `## Quality Standards`,
-    `- Fact-check all claims and statistics`,
-    `- Use authoritative sources and examples`,
-    `- Maintain ${languageName} grammar and cultural context`,
-    `- Ensure mobile-friendly formatting`,
-    `- Create content that encourages social sharing`,
-    '',
-    `Begin writing the ${contentType.replace('_', ' ').toLowerCase()} about "${topic}" now.`
+    `Write a high-quality ${contentType.replace('_', ' ').toLowerCase()} about "${topic}" in ${languageName}.`
   ].filter(Boolean).join('\n');
   
   return prompt;
@@ -183,153 +292,140 @@ export async function generateArticleViaAPI({
   topic,
   languageCode, 
   categoryName,
+  categorySlug = null,
   contentType = 'SEO_ARTICLE',
   targetAudience = 'general web readers',
   keywords = [],
   includeWebSearch = true,
-  generateImage = false,
-  maxWords = 2000,
-  complexity = 'medium'
+  generateImage = false,  // معطل افتراضياً
+  maxWords = 1500,        // مخفض من 2000
+  complexity = 'medium',
+  monthlyTokensUsed = 0
 }) {
   if (!config.ai.apiKey) {
-    // Enhanced development fallback with realistic content
+    // Enhanced development fallback
     logger.warn('No API key provided, using enhanced mock content');
     
-    const mockTitle = `Professional ${categoryName} Guide: ${topic}`;
+    const mockTitle = `${categoryName}: Complete Guide to ${topic}`;
     const mockContent = `# ${mockTitle}
 
 ## Introduction
+This comprehensive guide explores ${topic} within ${categoryName}, providing valuable insights for ${targetAudience}.
 
-This comprehensive guide explores ${topic} in the context of ${categoryName}, providing valuable insights for ${targetAudience}.
+## Key Points
+- Understanding core concepts and fundamentals
+- Practical implementation strategies  
+- Best practices and common pitfalls
+- Future trends and opportunities
 
-## Key Concepts
-
-Understanding ${topic} requires examining several fundamental aspects:
-
-### Primary Considerations
-- **Market Analysis**: Current trends and future projections
-- **Technical Implementation**: Best practices and methodologies  
-- **Risk Assessment**: Potential challenges and mitigation strategies
-- **Performance Metrics**: Key indicators and benchmarks
-
-### Advanced Strategies
-- Data-driven decision making
-- Scalable solution architecture
-- User experience optimization
-- Security and compliance frameworks
-
-## Implementation Guide
-
-### Phase 1: Planning and Preparation
-Detailed planning ensures successful implementation of ${topic} strategies.
-
-### Phase 2: Execution and Monitoring
-Active monitoring and adjustment optimize outcomes.
-
-### Phase 3: Optimization and Scaling
-Continuous improvement drives long-term success.
-
-## Best Practices
-
-1. **Regular Assessment**: Monitor performance indicators consistently
-2. **Stakeholder Engagement**: Maintain clear communication channels
-3. **Technology Integration**: Leverage appropriate tools and platforms
-4. **Risk Management**: Implement comprehensive mitigation strategies
+## Implementation
+1. **Planning Phase**: Define objectives and requirements
+2. **Execution Phase**: Apply proven methodologies
+3. **Optimization Phase**: Monitor and improve results
 
 ## Conclusion
+Mastering ${topic} requires consistent effort and strategic approach. Follow these guidelines for optimal results.`;
 
-Successfully implementing ${topic} strategies requires careful planning, execution, and ongoing optimization. By following these guidelines, ${targetAudience} can achieve sustainable results.
-
-## Key Takeaways
-
-- Thorough planning is essential for success
-- Regular monitoring enables timely adjustments
-- Best practices ensure optimal outcomes
-- Continuous improvement drives long-term value`;
-
-    const tokensOut = roughTokenEstimate(mockContent, languageCode);
-    const prompt = buildAdvancedPrompt({ 
-      topic, languageCode, categoryName, contentType, 
-      targetAudience, keywords, includeWebSearch, maxWords 
-    });
-    const tokensIn = roughTokenEstimate(prompt, languageCode);
-    
     return { 
       title: mockTitle, 
       content: mockContent, 
-      summary: `Comprehensive guide to ${topic} covering key concepts, implementation strategies, and best practices for ${targetAudience}.`,
-      metaDescription: `Learn about ${topic} with this detailed ${categoryName} guide. Expert insights and practical strategies for ${targetAudience}.`,
+      summary: `Complete guide to ${topic} in ${categoryName} with practical insights.`,
+      metaDescription: `Learn ${topic} fundamentals with this ${categoryName} guide. Expert tips and strategies.`,
       imageUrl: null, 
-      tokensIn, 
-      tokensOut, 
-      model: 'mock-enhanced' 
+      tokensIn: 250, 
+      tokensOut: 400, 
+      model: 'mock-optimized' 
     };
   }
 
+  // استخدم slug إن توفر، أو اسم الفئة بشكل lowercased كبديل (معلن خارج الـ try لاستخدامه في الـ catch)
+  const categorySlugLower = (categorySlug || categoryName || '').toString().trim().toLowerCase();
+
   try {
-    const model = selectOptimalModel(languageCode, contentType.toLowerCase(), complexity);
-    const prompt = buildAdvancedPrompt({ 
+
+    // اختيار موديل محسن اقتصادياً
+    const selectedModel = selectCostEfficientModel(languageCode, categorySlugLower, complexity, monthlyTokensUsed);
+    const model = mapProviderModelName(selectedModel);
+    const prompt = buildOptimizedPrompt({ 
       topic, languageCode, categoryName, contentType, 
-      targetAudience, keywords, includeWebSearch, maxWords 
+      targetAudience, keywords, maxWords 
     });
+
+    // تقدير التوكنز قبل الإرسال
+    const estimatedInputTokens = roughTokenEstimate(prompt, model, 'input');
+    const estimatedOutputTokens = maxWords * 1.3; // تقدير تقريبي
+    const estimatedCost = estimateTokenCost(estimatedInputTokens, estimatedOutputTokens, model);
 
     logger.info({ 
       model, 
       languageCode, 
+      categoryName,
       topic: topic.slice(0, 50), 
+      estimatedInputTokens,
+      estimatedOutputTokens,
+      estimatedCost,
       promptLength: prompt.length 
-    }, 'Generating article with 1min.ai API');
+    }, 'Starting cost-optimized article generation');
 
-    // Build the correct request payload for 1min.ai API
+    // Build API request
     const requestPayload = {
-      type: API_TYPES.CHAT_WITH_AI,
+      type: 'CHAT_WITH_AI',
       model: model,
       promptObject: {
         prompt: prompt,
         isMixed: false,
         imageList: [],
-        webSearch: includeWebSearch,
-        numOfSite: includeWebSearch ? 3 : 0,
+        // Enable provider web search when requested
+        webSearch: !!includeWebSearch,
+        numOfSite: includeWebSearch ? 2 : 0,  // مخفض من 3 إلى 2
         maxWord: maxWords,
-        temperature: contentType === 'creative' ? 0.8 : 0.7,
+        temperature: 0.7,  // ثابت لتوفير التوكنز
         language: languageCode
       }
     };
 
-    // Make the API call with correct headers and endpoint
     const response = await axios.post(
-      `${config.ai.baseUrl.replace(/\/$/, '')}/api/features`,
+      `${config.ai.baseUrl}/api/features`,
       requestPayload,
       { 
         headers: { 
           'Content-Type': 'application/json',
-          'API-KEY': config.ai.apiKey  // Correct header format
+          'API-KEY': config.ai.apiKey
         }, 
         params: {
-          isStreaming: false  // Set to true for streaming responses
+          isStreaming: false
         },
-        timeout: 120_000  // 2 minutes timeout for long content generation
+        timeout: 90_000  // مخفض من 120 ثانية إلى 90
       }
     );
 
     const data = response.data || {};
-    
-    // Extract and parse the response
-    const content = data.text || data.content || data.response || '';
+    // 1min.ai non-streaming shape: { aiRecord: { aiRecordDetail: { resultObject: [text] } } }
+    let content = '';
+    const aiRecord = data.aiRecord;
+    const resultObject = aiRecord?.aiRecordDetail?.resultObject;
+    if (Array.isArray(resultObject)) {
+      content = resultObject.filter(Boolean).map(item => String(item)).join('\n\n');
+    } else if (typeof resultObject === 'string') {
+      content = resultObject;
+    }
+    if (!content) {
+      content = data.text || data.content || aiRecord?.content || '';
+    }
     const usage = data.usage || {};
     
-    // Parse the structured response if the AI followed our format
+    // Parse response
     const lines = content.split('\n');
     let title = '';
     let metaDescription = '';
     let summary = '';
     let articleContent = content;
     
-    // Try to extract structured data from response
+    // Extract structured data
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
-      if (line.toLowerCase().includes('title:') || line.startsWith('# ')) {
-        title = line.replace(/^#\s*/, '').replace(/^title:\s*/i, '').trim();
+      if (line.startsWith('# ') && !title) {
+        title = line.replace(/^#\s*/, '').trim();
       }
       if (line.toLowerCase().includes('meta description:')) {
         metaDescription = lines[i + 1]?.trim() || '';
@@ -339,120 +435,77 @@ Successfully implementing ${topic} strategies requires careful planning, executi
       }
     }
     
-    // Fallback extractions
+    // Fallbacks
     if (!title) {
       const titleMatch = content.match(/^#\s*(.+)$/m);
-      title = titleMatch ? titleMatch[1].trim() : `Professional ${categoryName} Guide: ${topic}`;
+      title = titleMatch ? titleMatch[1].trim() : `${categoryName} Guide: ${topic}`;
     }
     
     if (!summary) {
-      // Extract first meaningful paragraph as summary
-      const paragraphs = content.split('\n\n').filter(p => 
-        p.trim().length > 50 && 
-        !p.includes('#') && 
-        !p.includes('**')
-      );
-      summary = paragraphs[0]?.slice(0, 300) + '...' || `Comprehensive guide about ${topic}`;
+      const paragraphs = content.split('\n\n').filter(p => p.trim().length > 50);
+      summary = paragraphs[0]?.slice(0, 250) + '...' || `Guide about ${topic}`;
     }
     
     if (!metaDescription) {
       metaDescription = summary.slice(0, 160);
     }
 
-    // Generate image if requested and we have the capability
-    let imageUrl = null;
-    if (generateImage && data.imageUrl) {
-      imageUrl = data.imageUrl;
-    } else if (generateImage) {
-      // Optionally trigger image generation in a separate call
-      try {
-        const imageResponse = await generateImage({ topic, categoryName, languageCode });
-        imageUrl = imageResponse.imageUrl;
-      } catch (imageError) {
-        logger.warn({ imageError }, 'Image generation failed');
-      }
-    }
-
-    const tokensIn = Number(usage.prompt_tokens || roughTokenEstimate(prompt, languageCode));
-    const tokensOut = Number(usage.completion_tokens || roughTokenEstimate(content, languageCode));
+    const tokensIn = Number(usage.prompt_tokens || roughTokenEstimate(prompt, selectedModel, 'input'));
+    const tokensOut = Number(usage.completion_tokens || roughTokenEstimate(content, selectedModel, 'output'));
+    const actualCost = estimateTokenCost(tokensIn, tokensOut, model);
 
     logger.info({ 
-      model, 
+      model: selectedModel,
       tokensIn, 
-      tokensOut, 
+      tokensOut,
+      actualCost,
       contentLength: content.length,
-      title: title.slice(0, 50)
-    }, 'Article generated successfully');
+      title: title.slice(0, 50),
+      estimatedVsActual: {
+        inputDiff: tokensIn - estimatedInputTokens,
+        outputDiff: tokensOut - estimatedOutputTokens
+      }
+    }, 'Cost-optimized article generated successfully');
 
     return {
-      title: title.slice(0, 200), // Ensure reasonable title length
+      title: title.slice(0, 180),
       content: articleContent,
-      summary: summary.slice(0, 500), // Ensure reasonable summary length
+      summary: summary.slice(0, 400),
       metaDescription: metaDescription.slice(0, 160),
-      imageUrl,
+      imageUrl: null, // معطل لتوفير التكلفة
       tokensIn,
       tokensOut,
-      model
+      model: selectedModel,
+      estimatedCost: actualCost
     };
 
   } catch (err) {
     logger.error({ 
       err: err.message, 
       status: err.response?.status,
-      responseData: err.response?.data,
       languageCode, 
+      categoryName,
+      categorySlug: categorySlugLower,
       topic: topic.slice(0, 50) 
-    }, 'AI API call failed');
+    }, 'Cost-optimized AI API call failed');
     
-    // Provide more specific error handling
     if (err.response?.status === 401) {
       throw new Error('Invalid API key for 1min.ai');
     } else if (err.response?.status === 429) {
       throw new Error('Rate limit exceeded on 1min.ai API');
-    } else if (err.response?.status === 400) {
-      throw new Error('Invalid request format for 1min.ai API');
     }
     
     throw err;
   }
 }
 
-// Helper function for image generation
-async function generateImage({ topic, categoryName, languageCode }) {
-  try {
-    const imagePrompt = `Create a professional, high-quality image for an article about "${topic}" in the ${categoryName} category. Style: modern, clean, professional, suitable for web publication. No text overlay.`;
-    
-    const requestPayload = {
-      type: API_TYPES.IMAGE_GENERATOR,
-      model: AVAILABLE_MODELS.MIDJOURNEY,
-      promptObject: {
-        prompt: imagePrompt,
-        num_outputs: 1,
-        aspect_ratio: "16:9", // Good for article headers
-        quality: "high"
-      }
-    };
-
-    const response = await axios.post(
-      `${config.ai.baseUrl.replace(/\/$/, '')}/api/features`,
-      requestPayload,
-      { 
-        headers: { 
-          'Content-Type': 'application/json',
-          'API-KEY': config.ai.apiKey
-        },
-        timeout: 60_000
-      }
-    );
-
-    return {
-      imageUrl: response.data?.imageUrl || response.data?.images?.[0]?.url || null
-    };
-  } catch (err) {
-    logger.warn({ err }, 'Image generation failed');
-    return { imageUrl: null };
-  }
-}
-
-// Export available models and types for configuration
-export { AVAILABLE_MODELS, API_TYPES, LANGUAGE_MODEL_MAP, WRITING_STYLES };
+// Export للتحكم في التكلفة
+export { 
+  AVAILABLE_MODELS, 
+  COST_EFFICIENT_MODEL_STRATEGY,
+  TOKEN_ESTIMATION_BY_MODEL,
+  selectCostEfficientModel,
+  estimateTokenCost,
+  roughTokenEstimate,
+  WRITING_STYLES 
+};

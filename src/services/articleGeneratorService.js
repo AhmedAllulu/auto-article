@@ -5,71 +5,156 @@ import { getCategoryBySlug, listCategories } from '../models/categoryModel.js';
 import { createArticle } from '../models/articleModel.js';
 import { recordTokenUsage, getMonthlyTokenUsage } from '../models/tokenUsageModel.js';
 import { upsertDailyJobTarget, incrementJobProgress, getJobForDay } from '../models/jobModel.js';
-import { generateArticleViaAPI, WRITING_STYLES, AVAILABLE_MODELS } from './aiClient.js';
+import { 
+  generateArticleViaAPI
+} from './aiClient.js';
 import { buildMeta, createSlug, estimateReadingTimeMinutes } from '../utils/seo.js';
 import { getTrendingTopics } from './trendsService.js';
+import { canRunOperation } from './budgetMonitorService.js';
 
-// Enhanced content strategy configuration
-const CONTENT_STRATEGIES = {
-  // Primary content types with distribution weights
-  'SEO_ARTICLE': { weight: 0.4, complexity: 'medium', audience: 'general web readers' },
-  'NEWS_ARTICLE': { weight: 0.25, complexity: 'medium', audience: 'news consumers' },
-  'BLOG_POST': { weight: 0.2, complexity: 'low', audience: 'casual readers' },
-  'TECHNICAL_GUIDE': { weight: 0.15, complexity: 'high', audience: 'professionals and experts' }
-};
+// استراتيجية توزيع المحتوى حسب الربحية
+const PROFITABILITY_STRATEGY = {
+  // توزيع اللغات حسب معدل الربح (RPM - Revenue Per Mille)
+  LANGUAGE_DISTRIBUTION: {
+    'en': { 
+      percentage: 35,     // 35% من المقالات
+      priority: 1,        // أعلى أولوية
+      avgRPM: 15.50,      // متوسط الربح لكل ألف مشاهدة
+      categories: ['technology', 'finance', 'business'] // الفئات المربحة
+    },
+    'de': { 
+      percentage: 20,     // 20% من المقالات  
+      priority: 2,
+      avgRPM: 12.80,
+      categories: ['technology', 'finance', 'business', 'health']
+    },
+    'fr': { 
+      percentage: 15,     // 15% من المقالات
+      priority: 3, 
+      avgRPM: 9.40,
+      categories: ['technology', 'business', 'travel', 'health']
+    },
+    'es': { 
+      percentage: 12,     // 12% من المقالات
+      priority: 4,
+      avgRPM: 7.20,
+      categories: ['technology', 'health', 'sports', 'entertainment']
+    },
+    'pt': { 
+      percentage: 8,      // 8% من المقالات
+      priority: 5,
+      avgRPM: 5.60,
+      categories: ['health', 'sports', 'entertainment', 'travel']
+    },
+    'ar': { 
+      percentage: 6,      // 6% من المقالات
+      priority: 6,
+      avgRPM: 4.80,
+      categories: ['technology', 'business', 'health']
+    },
+    'hi': { 
+      percentage: 4,      // 4% من المقالات
+      priority: 7,
+      avgRPM: 3.20,
+      categories: ['technology', 'health', 'entertainment']
+    }
+  },
 
-// Category-specific content preferences
-const CATEGORY_CONTENT_MAP = {
-  'technology': {
-    preferredTypes: ['TECHNICAL_GUIDE', 'SEO_ARTICLE', 'NEWS_ARTICLE'],
-    keywords: ['innovation', 'software', 'digital transformation', 'AI', 'automation'],
-    complexity: 'high',
-    audience: 'tech professionals and enthusiasts'
+  // توزيع الفئات حسب الربحية
+  CATEGORY_DISTRIBUTION: {
+    'technology': { 
+      percentage: 25,     // 25% من المقالات
+      priority: 1,
+      avgRPM: 18.20,
+      competitiveness: 'high',
+      seasonality: 'stable'
+    },
+    'finance': { 
+      percentage: 20,     // 20% من المقالات
+      priority: 2, 
+      avgRPM: 16.80,
+      competitiveness: 'very_high',
+      seasonality: 'stable'
+    },
+    'business': { 
+      percentage: 15,     // 15% من المقالات
+      priority: 3,
+      avgRPM: 14.50,
+      competitiveness: 'high',
+      seasonality: 'stable'
+    },
+    'health': { 
+      percentage: 15,     // 15% من المقالات
+      priority: 4,
+      avgRPM: 12.30,
+      competitiveness: 'medium',
+      seasonality: 'stable'
+    },
+    'travel': { 
+      percentage: 10,     // 10% من المقالات
+      priority: 5,
+      avgRPM: 8.90,
+      competitiveness: 'medium',
+      seasonality: 'high'
+    },
+    'sports': { 
+      percentage: 8,      // 8% من المقالات
+      priority: 6,
+      avgRPM: 7.60,
+      competitiveness: 'medium',
+      seasonality: 'medium'
+    },
+    'entertainment': { 
+      percentage: 7,      // 7% من المقالات
+      priority: 7,
+      avgRPM: 6.40,
+      competitiveness: 'low',
+      seasonality: 'high'
+    }
   },
-  'finance': {
-    preferredTypes: ['SEO_ARTICLE', 'NEWS_ARTICLE', 'TECHNICAL_GUIDE'],
-    keywords: ['investment', 'market analysis', 'financial planning', 'economics'],
-    complexity: 'medium',
-    audience: 'investors and financial professionals'
-  },
-  'health': {
-    preferredTypes: ['SEO_ARTICLE', 'BLOG_POST', 'TECHNICAL_GUIDE'],
-    keywords: ['wellness', 'nutrition', 'fitness', 'mental health', 'healthcare'],
-    complexity: 'medium',
-    audience: 'health-conscious individuals'
-  },
-  'sports': {
-    preferredTypes: ['NEWS_ARTICLE', 'SEO_ARTICLE', 'BLOG_POST'],
-    keywords: ['performance', 'training', 'competition', 'athletics'],
-    complexity: 'low',
-    audience: 'sports fans and athletes'
-  },
-  'entertainment': {
-    preferredTypes: ['NEWS_ARTICLE', 'BLOG_POST', 'SEO_ARTICLE'],
-    keywords: ['trending', 'celebrity', 'movies', 'music', 'streaming'],
-    complexity: 'low',
-    audience: 'entertainment enthusiasts'
-  },
-  'travel': {
-    preferredTypes: ['SEO_ARTICLE', 'BLOG_POST', 'TECHNICAL_GUIDE'],
-    keywords: ['destinations', 'travel tips', 'culture', 'adventure'],
-    complexity: 'medium',
-    audience: 'travelers and adventure seekers'
-  },
-  'business': {
-    preferredTypes: ['SEO_ARTICLE', 'TECHNICAL_GUIDE', 'NEWS_ARTICLE'],
-    keywords: ['strategy', 'entrepreneurship', 'leadership', 'growth', 'innovation'],
-    complexity: 'high',
-    audience: 'business professionals and entrepreneurs'
+
+  // أوقات النشر المثلى حسب المنطقة الزمنية
+  OPTIMAL_PUBLISHING_TIMES: {
+    'en': ['08:00', '14:00', '20:00'], // UTC times for US/UK audiences
+    'de': ['07:00', '13:00', '19:00'], // CET optimal times
+    'fr': ['07:00', '13:00', '19:00'], // CET optimal times
+    'es': ['08:00', '14:00', '21:00'], // Spain/Latin America
+    'pt': ['09:00', '15:00', '21:00'], // Brazil time consideration
+    'ar': ['10:00', '16:00', '22:00'], // Middle East times
+    'hi': ['11:00', '17:00', '23:00']  // India time consideration
   }
 };
 
-// Time-based content strategy (adjust based on time of day/week)
-const TIME_BASED_STRATEGY = {
-  'morning': { focus: 'NEWS_ARTICLE', urgency: 'high' },
-  'afternoon': { focus: 'SEO_ARTICLE', urgency: 'medium' },
-  'evening': { focus: 'BLOG_POST', urgency: 'low' },
-  'weekend': { focus: 'TECHNICAL_GUIDE', urgency: 'low' }
+// Enhanced content strategy مع التركيز على الربحية
+const ENHANCED_CONTENT_STRATEGIES = {
+  'HIGH_VALUE_SEO': { 
+    weight: 0.45,       // 45% من المحتوى
+    complexity: 'high', 
+    audience: 'professionals and decision makers',
+    avgTokens: 2800,
+    targetCategories: ['technology', 'finance', 'business']
+  },
+  'TRENDING_NEWS': { 
+    weight: 0.25,       // 25% من المحتوى
+    complexity: 'medium', 
+    audience: 'general readers seeking current info',
+    avgTokens: 2200,
+    targetCategories: ['technology', 'business', 'health']
+  },
+  'PRACTICAL_GUIDE': { 
+    weight: 0.20,       // 20% من المحتوى
+    complexity: 'medium', 
+    audience: 'users seeking solutions',
+    avgTokens: 2400,
+    targetCategories: ['health', 'technology', 'travel']
+  },
+  'QUICK_INSIGHTS': { 
+    weight: 0.10,       // 10% من المحتوى
+    complexity: 'low', 
+    audience: 'casual browsers',
+    avgTokens: 1800,
+    targetCategories: ['sports', 'entertainment']
+  }
 };
 
 function getYearMonth(d = new Date()) {
@@ -81,15 +166,30 @@ function todayUTC() {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
-function getCurrentTimeContext() {
-  const now = new Date();
-  const hour = now.getUTCHours();
-  const day = now.getUTCDay(); // 0 = Sunday, 6 = Saturday
+// حساب الميزانية المتبقية بدقة أكبر
+async function calculateTokenBudget() {
+  const { year, month } = getYearMonth();
+  const usedTokens = await getMonthlyTokenUsage(year, month);
+  const remainingTokens = Math.max(0, config.generation.monthlyTokenCap - usedTokens);
   
-  if (day === 0 || day === 6) return 'weekend';
-  if (hour >= 6 && hour < 12) return 'morning';
-  if (hour >= 12 && hour < 18) return 'afternoon';
-  return 'evening';
+  // حساب الأيام المتبقية في الشهر
+  const now = new Date();
+  const lastDayOfMonth = new Date(year, month, 0).getDate();
+  const currentDay = now.getUTCDate();
+  const daysRemaining = Math.max(1, lastDayOfMonth - currentDay + 1);
+  
+  // حساب الميزانية اليومية المثلى
+  const dailyBudget = Math.floor(remainingTokens / daysRemaining);
+  const conservativeDailyBudget = Math.floor(dailyBudget * 0.8); // احتياط 20%
+  
+  return {
+    totalRemaining: remainingTokens,
+    daysRemaining,
+    dailyBudget: conservativeDailyBudget,
+    usedTokens,
+    monthlyLimit: config.generation.monthlyTokenCap,
+    utilizationRate: (usedTokens / config.generation.monthlyTokenCap) * 100
+  };
 }
 
 async function remainingArticlesForToday() {
@@ -100,158 +200,218 @@ async function remainingArticlesForToday() {
   return Math.max(0, config.generation.dailyTarget - generated);
 }
 
-async function tokensRemainingForMonth() {
-  const { year, month } = getYearMonth();
-  const used = await getMonthlyTokenUsage(year, month);
-  return Math.max(0, config.generation.monthlyTokenCap - used);
-}
-
-function selectContentType(category, timeContext = null) {
-  const categoryConfig = CATEGORY_CONTENT_MAP[category] || CATEGORY_CONTENT_MAP['technology'];
-  const timeConfig = timeContext ? TIME_BASED_STRATEGY[timeContext] : null;
+// توزيع ذكي للمقالات حسب الربحية
+function calculateOptimalDistribution(totalArticles, tokenBudget) {
+  const distribution = {
+    byLanguage: {},
+    byCategory: {},
+    byContentType: {},
+    totalEstimatedTokens: 0
+  };
   
-  // If we have time-based preference and it's in category's preferred types
-  if (timeConfig && categoryConfig.preferredTypes.includes(timeConfig.focus)) {
-    return timeConfig.focus;
-  }
+  // توزيع اللغات
+  Object.entries(PROFITABILITY_STRATEGY.LANGUAGE_DISTRIBUTION).forEach(([lang, config]) => {
+    const articleCount = Math.floor((totalArticles * config.percentage) / 100);
+    distribution.byLanguage[lang] = articleCount;
+  });
   
-  // Otherwise select from category preferences with weighted randomization
-  const weights = categoryConfig.preferredTypes.map(type => 
-    CONTENT_STRATEGIES[type]?.weight || 0.1
-  );
+  // توزيع الفئات
+  Object.entries(PROFITABILITY_STRATEGY.CATEGORY_DISTRIBUTION).forEach(([category, config]) => {
+    const articleCount = Math.floor((totalArticles * config.percentage) / 100);
+    distribution.byCategory[category] = articleCount;
+  });
   
-  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
-  const random = Math.random() * totalWeight;
+  // توزيع أنواع المحتوى
+  Object.entries(ENHANCED_CONTENT_STRATEGIES).forEach(([contentType, config]) => {
+    const articleCount = Math.floor((totalArticles * config.weight) / 100);
+    distribution.byContentType[contentType] = articleCount;
+    distribution.totalEstimatedTokens += articleCount * config.avgTokens;
+  });
   
-  let cumulativeWeight = 0;
-  for (let i = 0; i < categoryConfig.preferredTypes.length; i++) {
-    cumulativeWeight += weights[i];
-    if (random <= cumulativeWeight) {
-      return categoryConfig.preferredTypes[i];
-    }
-  }
-  
-  return categoryConfig.preferredTypes[0] || 'SEO_ARTICLE';
-}
-
-function enhanceTopicWithTrends(baseTopic, category, trends = []) {
-  // Combine base topic with trending elements for more engaging content
-  const categoryConfig = CATEGORY_CONTENT_MAP[category] || CATEGORY_CONTENT_MAP['technology'];
-  const relatedTrends = trends.filter(t => t.category === category);
-  
-  if (relatedTrends.length > 0) {
-    const trendingElement = relatedTrends[Math.floor(Math.random() * relatedTrends.length)];
-    return `${baseTopic}: ${trendingElement.topic} trends and insights`;
-  }
-  
-  // Add category-specific enhancement
-  const randomKeyword = categoryConfig.keywords[Math.floor(Math.random() * categoryConfig.keywords.length)];
-  return `${baseTopic}: comprehensive guide to ${randomKeyword}`;
-}
-
-async function selectTargets(batchSize) {
-  const categories = await listCategories();
-  const timeContext = getCurrentTimeContext();
-  const targets = [];
-  
-  logger.info({ timeContext, batchSize }, 'Selecting article targets');
-  
-  // Get trending topics for context
-  const allTrends = [];
-  for (const languageCode of config.languages) {
-    try {
-      const trends = await getTrendingTopics({ languageCode, maxPerCategory: 2 });
-      allTrends.push(...trends.map(t => ({ ...t, languageCode })));
-    } catch (err) {
-      logger.warn({ err, languageCode }, 'Failed to get trends for language');
-    }
-  }
-  
-  // Create a balanced distribution across languages and categories
-  const languageRotation = [...config.languages];
-  const categoryRotation = [...config.topCategories];
-  
-  for (let i = 0; i < batchSize && (languageRotation.length > 0 || categoryRotation.length > 0); i++) {
-    // Rotate through languages and categories for even distribution
-    const languageCode = languageRotation[i % languageRotation.length];
-    const categorySlug = categoryRotation[i % categoryRotation.length];
+  // التحقق من الميزانية
+  if (distribution.totalEstimatedTokens > tokenBudget.dailyBudget) {
+    const scalingFactor = tokenBudget.dailyBudget / distribution.totalEstimatedTokens;
+    logger.warn({ 
+      estimatedTokens: distribution.totalEstimatedTokens,
+      dailyBudget: tokenBudget.dailyBudget,
+      scalingFactor 
+    }, 'Token budget exceeded, scaling down');
     
-    const category = categories.find(c => c.slug === categorySlug) || categories[0];
-    const categoryConfig = CATEGORY_CONTENT_MAP[categorySlug] || CATEGORY_CONTENT_MAP['technology'];
+    // تقليل عدد المقالات بنسبة متناسبة
+    Object.keys(distribution.byLanguage).forEach(lang => {
+      distribution.byLanguage[lang] = Math.floor(distribution.byLanguage[lang] * scalingFactor);
+    });
     
-    // Select content type based on category and time
-    const contentType = selectContentType(categorySlug, timeContext);
-    
-    // Get relevant trends for this language/category combination
-    const relevantTrends = allTrends.filter(t => 
-      t.languageCode === languageCode && t.category === categorySlug
-    );
-    
-    // Create topic based on trends or fallback to category keywords
-    let topic;
-    if (relevantTrends.length > 0) {
-      const selectedTrend = relevantTrends[Math.floor(Math.random() * relevantTrends.length)];
-      topic = enhanceTopicWithTrends(selectedTrend.topic, categorySlug, allTrends);
-    } else {
-      // Fallback to category-based topic generation
-      const baseKeywords = categoryConfig.keywords;
-      const primaryKeyword = baseKeywords[Math.floor(Math.random() * baseKeywords.length)];
-      topic = `${primaryKeyword} in ${category.name}: comprehensive analysis and insights`;
-    }
-    
-    targets.push({
-      languageCode,
-      categoryId: category.id,
-      categoryName: category.name,
-      categorySlug,
-      topic,
-      contentType,
-      complexity: categoryConfig.complexity,
-      targetAudience: categoryConfig.audience,
-      keywords: categoryConfig.keywords.slice(0, 5), // Use top 5 keywords
-      timeContext
+    Object.keys(distribution.byCategory).forEach(category => {
+      distribution.byCategory[category] = Math.floor(distribution.byCategory[category] * scalingFactor);
     });
   }
   
-  // Shuffle targets to avoid predictable patterns
-  for (let i = targets.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [targets[i], targets[j]] = [targets[j], targets[i]];
-  }
-  
-  logger.info({ 
-    targetCount: targets.length,
-    contentTypes: targets.map(t => t.contentType),
-    languages: targets.map(t => t.languageCode),
-    categories: targets.map(t => t.categorySlug)
-  }, 'Article targets selected');
-  
-  return targets.slice(0, batchSize);
+  return distribution;
 }
 
-async function generateOne(target) {
+// اختيار مواضيع محسنة للربحية مع دمج Google Trends
+async function selectProfitableTargets(plannedDistribution) {
+  const targets = [];
+  const categories = await listCategories();
+  
+  // جلب الترندات لجميع اللغات
+  const trendingTopicsByLang = {};
+  
+  for (const languageCode of Object.keys(PROFITABILITY_STRATEGY.LANGUAGE_DISTRIBUTION)) {
+    try {
+      logger.info({ languageCode }, 'Fetching trends for language');
+      const trends = await getTrendingTopics({ 
+        languageCode, 
+        maxPerCategory: 3 
+      });
+      trendingTopicsByLang[languageCode] = trends;
+      logger.info({ 
+        languageCode, 
+        trendCount: trends.length,
+        categories: [...new Set(trends.map(t => t.category))]
+      }, 'Trends fetched successfully');
+    } catch (err) {
+      logger.warn({ err, languageCode }, 'Failed to fetch trends for language');
+      trendingTopicsByLang[languageCode] = [];
+    }
+  }
+  
+  // إنشاء targets حسب التوزيع المحسوب
+  const languageEntries = Object.entries(plannedDistribution.byLanguage)
+    .filter(([_, count]) => count > 0)
+    .sort(([, a], [, b]) => b - a); // ترتيب تنازلي حسب العدد
+  
+  for (const [languageCode, targetCount] of languageEntries) {
+    const langConfig = PROFITABILITY_STRATEGY.LANGUAGE_DISTRIBUTION[languageCode];
+    const trends = trendingTopicsByLang[languageCode] || [];
+    
+    for (let i = 0; i < targetCount; i++) {
+      // اختيار فئة حسب أولوية الربحية للغة
+      const availableCategories = langConfig.categories;
+      const categorySlug = availableCategories[i % availableCategories.length];
+      const category = categories.find(c => c.slug === categorySlug);
+      
+      if (!category) continue;
+      
+      // البحث عن trend مناسب للفئة واللغة
+      const relevantTrends = trends.filter(t => t.category === categorySlug);
+      let topic;
+      let contentType;
+      
+      if (relevantTrends.length > 0 && Math.random() < 0.7) {
+        // استخدام trend حقيقي (70% احتمال)
+        const selectedTrend = relevantTrends[Math.floor(Math.random() * relevantTrends.length)];
+        topic = `${selectedTrend.topic}: Comprehensive Analysis and Latest Insights`;
+        contentType = 'TRENDING_NEWS';
+        
+        logger.info({ 
+          languageCode, 
+          categorySlug, 
+          trendTopic: selectedTrend.topic 
+        }, 'Using trending topic');
+      } else {
+        // استخدام موضوع تقليدي مع تحسين SEO
+        const categoryConfig = PROFITABILITY_STRATEGY.CATEGORY_DISTRIBUTION[categorySlug];
+        const profitableKeywords = {
+          'technology': ['AI automation', 'cloud security', 'digital transformation', 'software development'],
+          'finance': ['investment strategies', 'financial planning', 'cryptocurrency analysis', 'market trends'],
+          'business': ['business growth', 'startup success', 'marketing automation', 'leadership'],
+          'health': ['wellness tips', 'nutrition guide', 'fitness routine', 'mental health'],
+          'travel': ['travel destinations', 'budget travel', 'travel safety', 'local culture'],
+          'sports': ['training methods', 'sports nutrition', 'athletic performance', 'sports news'],
+          'entertainment': ['celebrity news', 'movie reviews', 'music trends', 'gaming']
+        };
+        
+        const keywords = profitableKeywords[categorySlug] || ['general guide'];
+        const selectedKeyword = keywords[Math.floor(Math.random() * keywords.length)];
+        topic = `Ultimate Guide to ${selectedKeyword}: Expert Tips and Strategies`;
+        
+        // اختيار نوع المحتوى حسب الربحية
+        if (categoryConfig.priority <= 3) {
+          contentType = 'HIGH_VALUE_SEO';
+        } else {
+          contentType = 'PRACTICAL_GUIDE';
+        }
+      }
+      
+      // تحديد مستوى التعقيد
+      const categoryPriority = PROFITABILITY_STRATEGY.CATEGORY_DISTRIBUTION[categorySlug]?.priority || 5;
+      const complexity = categoryPriority <= 2 ? 'high' : categoryPriority <= 4 ? 'medium' : 'low';
+      
+      targets.push({
+        languageCode,
+        categoryId: category.id,
+        categoryName: category.name,
+        categorySlug,
+        topic,
+        contentType,
+        complexity,
+        targetAudience: ENHANCED_CONTENT_STRATEGIES[contentType]?.audience || 'general readers',
+        keywords: [], // سيتم ملئها لاحقاً حسب الحاجة
+        priority: langConfig.priority + (categoryPriority * 0.1),
+        estimatedTokens: ENHANCED_CONTENT_STRATEGIES[contentType]?.avgTokens || 2200,
+        profitabilityScore: langConfig.avgRPM * (6 - categoryPriority), // نتيجة الربحية
+        trendBased: relevantTrends.length > 0
+      });
+    }
+  }
+  
+  // ترتيب targets حسب الربحية
+  targets.sort((a, b) => b.profitabilityScore - a.profitabilityScore);
+  
+  logger.info({
+    totalTargets: targets.length,
+    languageDistribution: Object.fromEntries(
+      Object.entries(plannedDistribution.byLanguage).filter(([_, count]) => count > 0)
+    ),
+    categoryDistribution: Object.fromEntries(
+      Object.entries(plannedDistribution.byCategory).filter(([_, count]) => count > 0)
+    ),
+    trendBasedCount: targets.filter(t => t.trendBased).length,
+    avgProfitabilityScore: targets.reduce((sum, t) => sum + t.profitabilityScore, 0) / targets.length
+  }, 'Profitable targets selected with trends integration');
+  
+  return targets;
+}
+
+async function generateOne(target, monthlyTokensUsed = 0) {
   const startTime = Date.now();
   
   logger.info({
     language: target.languageCode,
     category: target.categorySlug,
     contentType: target.contentType,
-    topic: target.topic.slice(0, 50)
-  }, 'Starting article generation');
+    topic: target.topic.slice(0, 50),
+    profitabilityScore: target.profitabilityScore,
+    trendBased: target.trendBased
+  }, 'Starting profitable article generation');
 
   try {
-    // Enhanced article generation with all the new parameters
+    // تقدير توكنز سريع حسب التعقيد لضمان عدم تجاوز الميزانية
+    const plannedMaxWords = target.complexity === 'high' ? 1500 : target.complexity === 'medium' ? 1200 : 1000;
+    const estimatedTokensForArticle =
+      target.complexity === 'high' ? 2400 : target.complexity === 'medium' ? 1900 : 1600;
+
+    const permission = await canRunOperation(estimatedTokensForArticle);
+    if (!permission.allowed) {
+      logger.warn({ reason: permission.reason, estimatedTokensForArticle }, 'Skipping article due to budget constraints');
+      return { article: null, tokens: 0, generationTime: Date.now() - startTime, estimatedCost: 0, profitabilityScore: 0 };
+    }
+
     const result = await generateArticleViaAPI({
       topic: target.topic,
       languageCode: target.languageCode,
       categoryName: target.categoryName,
+      categorySlug: target.categorySlug,
       contentType: target.contentType,
       targetAudience: target.targetAudience,
       keywords: target.keywords,
-      includeWebSearch: config.generation.enableWebSearch !== false,
-      generateImage: config.generation.generateImages === true,
-      maxWords: config.generation.maxWordsPerArticle || 2000,
-      complexity: target.complexity
+        includeWebSearch: true,
+      generateImage: false, // معطل لتوفير التكلفة
+      maxWords: plannedMaxWords,
+      complexity: target.complexity,
+      monthlyTokensUsed
     });
 
     const { 
@@ -262,21 +422,18 @@ async function generateOne(target) {
       imageUrl, 
       tokensIn, 
       tokensOut, 
-      model 
+      model,
+      estimatedCost
     } = result;
 
-    // Create SEO-optimized slug
     const slug = createSlug(title, target.languageCode);
-    
-    // Build comprehensive meta data
     const meta = buildMeta({ 
       title, 
       summary: summary || metaDescription, 
-      imageUrl, 
+      imageUrl: null, // معطل
       canonicalUrl: null 
     });
     
-    // Override with AI-generated meta description if available
     if (metaDescription) {
       meta.metaDescription = metaDescription;
       meta.ogDescription = metaDescription;
@@ -285,7 +442,6 @@ async function generateOne(target) {
     
     const readingTimeMinutes = estimateReadingTimeMinutes(content);
 
-    // Create the article record
     const article = await createArticle({
       title,
       slug,
@@ -293,18 +449,17 @@ async function generateOne(target) {
       summary: summary || content.slice(0, 300) + '...',
       languageCode: target.languageCode,
       categoryId: target.categoryId,
-      imageUrl,
+      imageUrl: null,
       meta,
       readingTimeMinutes,
       sourceUrl: null,
       aiModel: model,
-      aiPrompt: `Content Type: ${target.contentType}, Topic: ${target.topic}`,
+      aiPrompt: `Type: ${target.contentType}, Topic: ${target.topic}`,
       aiTokensInput: tokensIn,
       aiTokensOutput: tokensOut,
     });
 
     if (article) {
-      // Record token usage for monitoring
       await recordTokenUsage({
         day: todayUTC(),
         tokensInput: tokensIn,
@@ -319,23 +474,23 @@ async function generateOne(target) {
         model,
         tokensIn,
         tokensOut,
+        estimatedCost,
         contentLength: content.length,
         generationTimeMs: generationTime,
         language: target.languageCode,
         category: target.categorySlug,
-        contentType: target.contentType
-      }, 'Article generated successfully');
-    } else {
-      logger.warn({
-        topic: target.topic.slice(0, 50),
-        language: target.languageCode
-      }, 'Article creation failed - possible duplicate slug');
+        contentType: target.contentType,
+        profitabilityScore: target.profitabilityScore,
+        trendBased: target.trendBased
+      }, 'Profitable article generated successfully');
     }
 
     return { 
       article, 
       tokens: (tokensIn || 0) + (tokensOut || 0),
-      generationTime: Date.now() - startTime
+      generationTime: Date.now() - startTime,
+      estimatedCost,
+      profitabilityScore: target.profitabilityScore
     };
 
   } catch (err) {
@@ -346,10 +501,17 @@ async function generateOne(target) {
       language: target.languageCode, 
       topic: target.topic.slice(0, 50),
       contentType: target.contentType,
-      generationTimeMs: generationTime
-    }, 'Article generation failed');
+      generationTimeMs: generationTime,
+      profitabilityScore: target.profitabilityScore
+    }, 'Profitable article generation failed');
     
-    return { article: null, tokens: 0, generationTime };
+    return { 
+      article: null, 
+      tokens: 0, 
+      generationTime,
+      estimatedCost: 0,
+      profitabilityScore: 0
+    };
   }
 }
 
@@ -366,112 +528,142 @@ export function scheduleArticleGeneration() {
     schedule: config.generation.schedule,
     dailyTarget: config.generation.dailyTarget,
     monthlyTokenCap: config.generation.monthlyTokenCap,
-    maxBatchPerRun: config.generation.maxBatchPerRun
-  }, 'Article generation scheduler started');
+    maxBatchPerRun: config.generation.maxBatchPerRun,
+    profitabilityStrategy: 'enabled'
+  }, 'Profitability-optimized article generation scheduler started');
 
   cron.schedule(config.generation.schedule, async () => {
     const runStartTime = Date.now();
     
     try {
-      logger.info('Starting scheduled article generation run');
+      logger.info('Starting profitable article generation run');
       
-      // Check remaining articles for today
+      // فحص شامل للميزانية والحدود
+      const tokenBudget = await calculateTokenBudget();
       const remainingArticles = await remainingArticlesForToday();
+      
+      logger.info({
+        tokenBudget,
+        remainingArticles
+      }, 'Budget and targets calculated');
+      
       if (remainingArticles <= 0) {
-        logger.info({ 
-          dailyTarget: config.generation.dailyTarget 
-        }, 'Daily target reached; skipping run');
+        logger.info('Daily target reached; skipping run');
         return;
       }
 
-      // Check token budget
-      const tokensLeft = await tokensRemainingForMonth();
-      if (tokensLeft <= 0) {
+      if (tokenBudget.totalRemaining <= 0) {
         logger.warn({ 
-          monthlyTokenCap: config.generation.monthlyTokenCap 
+          monthlyTokenCap: config.generation.monthlyTokenCap,
+          utilizationRate: tokenBudget.utilizationRate
         }, 'Monthly token cap reached; skipping');
         return;
       }
 
-      // Estimate how many articles we can generate with remaining tokens
-      // More sophisticated estimation based on content type and language
-      const averageTokensPerArticle = config.generation.estimatedTokensPerArticle || 3000;
-      const maxByTokens = Math.floor(tokensLeft / averageTokensPerArticle);
+      // تحديد حجم الدفعة المثلى
+      const maxByTokens = Math.floor(tokenBudget.dailyBudget / 2500); // متوسط 2500 توكن لكل مقال
       
       if (maxByTokens <= 0) {
         logger.info({ 
-          tokensLeft, 
-          averageTokensPerArticle 
-        }, 'Not enough tokens for a safe article; skipping run');
+          dailyBudget: tokenBudget.dailyBudget
+        }, 'Insufficient daily token budget; skipping run');
         return;
       }
 
-      // Calculate optimal batch size
       const plannedBatch = Math.min(
         config.generation.maxBatchPerRun,
         remainingArticles,
         maxByTokens
       );
 
-      logger.info({
-        remainingArticles,
-        tokensLeft,
-        maxByTokens,
-        plannedBatch
-      }, 'Starting generation batch');
+      // حساب التوزيع الأمثل للربحية
+      const distribution = calculateOptimalDistribution(plannedBatch, tokenBudget);
+      const targets = await selectProfitableTargets(distribution);
 
-      // Select targets using enhanced strategy
-      const targets = await selectTargets(plannedBatch);
-      
+      if (targets.length === 0) {
+        logger.warn('No profitable targets generated');
+        return;
+      }
+
+      logger.info({
+        plannedBatch,
+        actualTargets: targets.length,
+        distribution,
+        estimatedTotalTokens: targets.reduce((sum, t) => sum + t.estimatedTokens, 0)
+      }, 'Starting profitable generation batch');
+
       let generated = 0;
       let failed = 0;
       let tokensSpent = 0;
+      let totalProfitabilityScore = 0;
       const generationStats = {
         byLanguage: {},
         byCategory: {},
         byContentType: {},
-        totalGenerationTime: 0
+        byProfitability: { high: 0, medium: 0, low: 0 },
+        trendBasedCount: 0,
+        totalGenerationTime: 0,
+        avgCostPerArticle: 0
       };
 
-      // Process articles with better error handling and stats tracking
-      for (const target of targets) {
-        if (tokensSpent >= tokensLeft) {
-          logger.warn('Token budget exhausted, stopping batch');
+      for (const target of targets.slice(0, plannedBatch)) {
+        // فحص الميزانية قبل كل مقال
+        const currentUsage = await getMonthlyTokenUsage(getYearMonth().year, getYearMonth().month);
+        if (currentUsage + tokensSpent >= config.generation.monthlyTokenCap) {
+          logger.warn('Monthly token budget exhausted during batch, stopping');
           break;
         }
 
-        const { article, tokens, generationTime } = await generateOne(target);
+        const { article, tokens, generationTime, estimatedCost, profitabilityScore } = 
+          await generateOne(target, currentUsage + tokensSpent);
         
-        // Update statistics
         generationStats.totalGenerationTime += generationTime;
         
         if (article) {
           generated += 1;
           tokensSpent += tokens;
+          totalProfitabilityScore += profitabilityScore;
           
-          // Track stats by dimensions
+          // إحصائيات مفصلة
           generationStats.byLanguage[target.languageCode] = 
             (generationStats.byLanguage[target.languageCode] || 0) + 1;
           generationStats.byCategory[target.categorySlug] = 
             (generationStats.byCategory[target.categorySlug] || 0) + 1;
           generationStats.byContentType[target.contentType] = 
             (generationStats.byContentType[target.contentType] || 0) + 1;
+          
+          // تصنيف الربحية
+          if (profitabilityScore > 100) {
+            generationStats.byProfitability.high += 1;
+          } else if (profitabilityScore > 50) {
+            generationStats.byProfitability.medium += 1;
+          } else {
+            generationStats.byProfitability.low += 1;
+          }
+          
+          if (target.trendBased) {
+            generationStats.trendBasedCount += 1;
+          }
+          
+          generationStats.avgCostPerArticle += estimatedCost;
         } else {
           failed += 1;
         }
 
-        // Small delay between requests to avoid rate limiting
+        // تأخير قصير بين الطلبات
         if (targets.indexOf(target) < targets.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise(resolve => setTimeout(resolve, 1500));
         }
       }
 
-      // Update job progress
+      // تحديث تقدم العمل
       if (generated > 0) {
         await incrementJobProgress({ day: todayUTC(), count: generated });
       }
 
       const runTime = Date.now() - runStartTime;
+      const avgProfitabilityScore = generated > 0 ? totalProfitabilityScore / generated : 0;
+      generationStats.avgCostPerArticle = generated > 0 ? generationStats.avgCostPerArticle / generated : 0;
       
       logger.info({
         generated,
@@ -480,88 +672,109 @@ export function scheduleArticleGeneration() {
         plannedBatch,
         runTimeMs: runTime,
         averageGenerationTimeMs: Math.round(generationStats.totalGenerationTime / targets.length),
-        stats: generationStats
-      }, 'Generation run completed');
+        avgProfitabilityScore,
+        trendIntegrationRate: (generationStats.trendBasedCount / generated) * 100,
+        stats: generationStats,
+        updatedTokenBudget: {
+          remaining: tokenBudget.totalRemaining - tokensSpent,
+          utilizationRate: ((tokenBudget.usedTokens + tokensSpent) / config.generation.monthlyTokenCap) * 100
+        }
+      }, 'Profitable generation run completed');
 
     } catch (err) {
       const runTime = Date.now() - runStartTime;
       logger.error({ 
         err: err.message,
         runTimeMs: runTime
-      }, 'Generation run failed');
+      }, 'Profitable generation run failed');
     }
   });
 }
 
-// Utility function to manually trigger generation (useful for testing)
-export async function triggerManualGeneration(options = {}) {
+// دالة للتشغيل اليدوي مع تحسينات الربحية
+export async function triggerProfitableGeneration(options = {}) {
   const {
-    batchSize = 1,
-    specificLanguage = null,
-    specificCategory = null,
-    contentType = null
+    batchSize = 5,
+    forceHighValue = false,
+    specificLanguages = null,
+    specificCategories = null
   } = options;
   
-  logger.info({ options }, 'Manual generation triggered');
+  logger.info({ options }, 'Manual profitable generation triggered');
   
   try {
-    let targets;
+    const tokenBudget = await calculateTokenBudget();
     
-    if (specificLanguage && specificCategory) {
-      // Generate specific target
-      const categories = await listCategories();
-      const category = categories.find(c => c.slug === specificCategory);
+    if (tokenBudget.totalRemaining <= 0) {
+      throw new Error('Monthly token budget exhausted');
+    }
+    
+    let distribution;
+    if (specificLanguages || specificCategories) {
+      // توزيع مخصص
+      distribution = { byLanguage: {}, byCategory: {}, byContentType: {} };
       
-      if (!category) {
-        throw new Error(`Category not found: ${specificCategory}`);
+      if (specificLanguages) {
+        specificLanguages.forEach(lang => {
+          distribution.byLanguage[lang] = Math.ceil(batchSize / specificLanguages.length);
+        });
       }
       
-      const categoryConfig = CATEGORY_CONTENT_MAP[specificCategory] || CATEGORY_CONTENT_MAP['technology'];
-      const selectedContentType = contentType || selectContentType(specificCategory);
-      
-      targets = [{
-        languageCode: specificLanguage,
-        categoryId: category.id,
-        categoryName: category.name,
-        categorySlug: specificCategory,
-        topic: `Manual generation: ${categoryConfig.keywords[0]} insights and analysis`,
-        contentType: selectedContentType,
-        complexity: categoryConfig.complexity,
-        targetAudience: categoryConfig.audience,
-        keywords: categoryConfig.keywords.slice(0, 3),
-        timeContext: getCurrentTimeContext()
-      }];
+      if (specificCategories) {
+        specificCategories.forEach(cat => {
+          distribution.byCategory[cat] = Math.ceil(batchSize / specificCategories.length);
+        });
+      }
     } else {
-      // Use regular target selection
-      targets = await selectTargets(batchSize);
+      distribution = calculateOptimalDistribution(batchSize, tokenBudget);
+    }
+    
+    const targets = await selectProfitableTargets(distribution);
+    
+    if (forceHighValue) {
+      // التركيز على المحتوى عالي القيمة فقط
+      targets.forEach(target => {
+        target.contentType = 'HIGH_VALUE_SEO';
+        target.complexity = 'high';
+        target.estimatedTokens = 2800;
+      });
     }
     
     const results = [];
-    for (const target of targets) {
-      const result = await generateOne(target);
+    for (const target of targets.slice(0, batchSize)) {
+      const result = await generateOne(target, tokenBudget.usedTokens);
       results.push(result);
     }
     
     const successful = results.filter(r => r.article).length;
     const totalTokens = results.reduce((sum, r) => sum + r.tokens, 0);
+    const avgProfitability = results.reduce((sum, r) => sum + r.profitabilityScore, 0) / results.length;
     
     logger.info({
       requested: batchSize,
       successful,
       totalTokens,
+      avgProfitability,
       results: results.map(r => ({
         success: !!r.article,
         title: r.article?.title?.slice(0, 50),
-        tokens: r.tokens
+        tokens: r.tokens,
+        profitabilityScore: r.profitabilityScore
       }))
-    }, 'Manual generation completed');
+    }, 'Manual profitable generation completed');
     
     return results;
     
   } catch (err) {
-    logger.error({ err, options }, 'Manual generation failed');
+    logger.error({ err, options }, 'Manual profitable generation failed');
     throw err;
   }
 }
 
-export { CONTENT_STRATEGIES, CATEGORY_CONTENT_MAP, TIME_BASED_STRATEGY };
+export { 
+  PROFITABILITY_STRATEGY, 
+  ENHANCED_CONTENT_STRATEGIES,
+  calculateTokenBudget,
+  calculateOptimalDistribution,
+  selectProfitableTargets
+};

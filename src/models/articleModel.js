@@ -32,7 +32,7 @@ export async function createArticle(article) {
       $11,$12,$13,
       $14,$15,$16,
       $17,$18,$19,$20,
-      $21,$22, ($21 + $22)
+      $21,$22, (COALESCE($21::int, 0) + COALESCE($22::int, 0))
     )
     ON CONFLICT (slug) DO NOTHING
     RETURNING *;
