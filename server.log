@@ -1,0 +1,16 @@
+
+> auto-article@1.0.0 dev
+> node src/server.js
+
+[dotenv@17.2.1] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+[dotenv@17.2.1] injecting env (0) from .env -- tip: 📡 version env with Radar: https://dotenvx.com/radar
+[01:50:30.966] [32mINFO[39m (406283): [36mServer started[39m
+    [35mport[39m: 8080
+
+> auto-article@1.0.0 dev
+> node src/server.js
+
+[dotenv@17.2.1] injecting env (16) from .env -- tip: 📡 auto-backup env with Radar: https://dotenvx.com/radar
+[dotenv@17.2.1] injecting env (0) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+[04:21:10.723] [32mINFO[39m (457340): [36mServer started[39m
+    [35mport[39m: 8080
