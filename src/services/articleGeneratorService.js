@@ -5,7 +5,7 @@ import { listCategories } from '../models/categoryModel.js';
 import { createArticle } from '../models/articleModel.js';
 import { recordTokenUsage, getMonthlyTokenUsage } from '../models/tokenUsageModel.js';
 import { upsertDailyJobTarget, incrementJobProgress, getJobForDay } from '../models/jobModel.js';
-import { generateArticleViaAPI } from './aiClient.js';
+import { generateArticleViaAPI, translateArticleViaAPI } from './aiClient.js';
 import { buildMeta, createSlug, estimateReadingTimeMinutes } from '../utils/seo.js';
 import { discoverTrendingTopicsWithAI } from './trendsService.js';
 import { canRunOperation } from './budgetMonitorService.js';
@@ -537,6 +537,177 @@ export function scheduleArticleGeneration() {
         err: err.message,
         runTimeMs: runTime
       }, 'AI-enhanced profitable generation run failed');
+    }
+  });
+
+  return task;
+}
+
+// Master + Translation workflow (7 masters in EN with web search → translate to other langs)
+export function scheduleMasterTranslationGeneration() {
+  logger.info('Starting Master+Translation generation scheduler');
+
+  const task = cron.schedule(config.generation.schedule, async () => {
+    const runStartTime = Date.now();
+    try {
+      logger.info('Master+Translation run started');
+
+      const categories = await listCategories();
+      const topCategorySlugs = config.topCategories || [];
+      const targetCategories = categories.filter(c => topCategorySlugs.includes(c.slug));
+
+      const allLanguages = config.languages || ['en'];
+      const targetLanguages = allLanguages.filter(l => l !== 'en');
+
+      // Phase 1: Generate one master article per category in English with web search (topic via AI trends)
+      const masterResults = [];
+      for (const category of targetCategories) {
+        const permission = await canRunOperation(2400);
+        if (!permission.allowed) {
+          logger.warn({ category: category.slug }, 'Skipping master due to budget constraints');
+          continue;
+        }
+
+        // Use AI to pick a strong trending topic for the master article
+        let masterTopic = `Most impactful ${category.slug} insight this week for professionals`;
+        try {
+          const aiTrends = await discoverTrendingTopicsWithAI({ languageCode: 'en', maxPerCategory: 3, categories: [category.slug] });
+          const relevant = aiTrends.filter(t => t.category === category.slug);
+          if (relevant.length > 0) {
+            masterTopic = relevant[0].topic;
+          }
+        } catch (err) {
+          logger.warn({ err, category: category.slug }, 'AI trends fetch failed for master topic, using fallback');
+        }
+        const result = await generateArticleViaAPI({
+          topic: masterTopic,
+          languageCode: 'en',
+          categoryName: category.name,
+          categorySlug: category.slug,
+          contentType: 'HIGH_VALUE_SEO',
+          targetAudience: 'professionals and decision makers',
+          keywords: [],
+          includeWebSearch: true, // expensive only for masters
+          generateImage: false,
+          maxWords: 1500,
+          complexity: 'high',
+        });
+
+        const masterMeta = buildMeta({
+          title: result.title,
+          summary: result.summary || result.metaDescription,
+          imageUrl: null,
+          canonicalUrl: null
+        });
+
+        if (result.metaDescription) {
+          masterMeta.metaDescription = result.metaDescription;
+          masterMeta.ogDescription = result.metaDescription;
+          masterMeta.twitterDescription = result.metaDescription;
+        }
+
+        const masterSlug = createSlug(result.title, 'en');
+        const masterReadingTime = estimateReadingTimeMinutes(result.content);
+        const masterArticle = await createArticle({
+          title: result.title,
+          slug: masterSlug,
+          content: result.content,
+          summary: result.summary || result.content.slice(0, 300) + '...',
+          languageCode: 'en',
+          categoryId: category.id,
+          imageUrl: null,
+          meta: masterMeta,
+          readingTimeMinutes: masterReadingTime,
+          sourceUrl: null,
+          aiModel: result.model,
+          aiPrompt: `MASTER_HIGH_VALUE_SEO:${category.slug}`,
+          aiTokensInput: result.tokensIn,
+          aiTokensOutput: result.tokensOut,
+        });
+
+        if (masterArticle) {
+          try {
+            await upsertDailyJobTarget({ day: todayUTC(), target: config.generation.dailyTarget });
+            await incrementJobProgress({ day: todayUTC(), count: 1 });
+          } catch (err) {
+            logger.warn({ err }, 'Failed to persist master generation progress');
+          }
+          await recordTokenUsage({ day: todayUTC(), tokensInput: result.tokensIn, tokensOutput: result.tokensOut });
+        }
+
+        masterResults.push({ category, result, article: masterArticle });
+        await new Promise(r => setTimeout(r, 1500));
+      }
+
+      // Phase 2: Translate each master to remaining languages (no web search)
+      for (const master of masterResults) {
+        if (!master.article) continue;
+        const { category, result } = master;
+        for (const lang of targetLanguages) {
+          const permission = await canRunOperation(1200);
+          if (!permission.allowed) {
+            logger.warn({ lang, category: category.slug }, 'Skipping translation due to budget constraints');
+            continue;
+          }
+
+          const t = await translateArticleViaAPI({
+            masterTitle: result.title,
+            masterContent: result.content,
+            targetLanguage: lang,
+            maxWords: 1500,
+          });
+
+          const meta = buildMeta({
+            title: t.title,
+            summary: t.summary || t.metaDescription,
+            imageUrl: null,
+            canonicalUrl: null
+          });
+          if (t.metaDescription) {
+            meta.metaDescription = t.metaDescription;
+            meta.ogDescription = t.metaDescription;
+            meta.twitterDescription = t.metaDescription;
+          }
+
+          const slug = createSlug(t.title, lang);
+          const readingTimeMinutes = estimateReadingTimeMinutes(t.content);
+          const article = await createArticle({
+            title: t.title,
+            slug,
+            content: t.content,
+            summary: t.summary || t.content.slice(0, 300) + '...',
+            languageCode: lang,
+            categoryId: category.id,
+            imageUrl: null,
+            meta,
+            readingTimeMinutes,
+            sourceUrl: null,
+            aiModel: t.model,
+            aiPrompt: `TRANSLATION_OF:${master.article.slug}`,
+            aiTokensInput: t.tokensIn,
+            aiTokensOutput: t.tokensOut,
+          });
+
+          if (article) {
+            try {
+              await upsertDailyJobTarget({ day: todayUTC(), target: config.generation.dailyTarget });
+              await incrementJobProgress({ day: todayUTC(), count: 1 });
+            } catch (err) {
+              logger.warn({ err }, 'Failed to persist translation progress');
+            }
+            await recordTokenUsage({ day: todayUTC(), tokensInput: t.tokensIn, tokensOutput: t.tokensOut });
+          }
+
+          await new Promise(r => setTimeout(r, 500));
+        }
+      }
+
+      const runTime = Date.now() - runStartTime;
+      logger.info({ masters: masterResults.length, runTimeMs: runTime }, 'Master+Translation run completed');
+
+    } catch (err) {
+      const runTime = Date.now() - runStartTime;
+      logger.error({ err: err.message, runTimeMs: runTime }, 'Master+Translation run failed');
     }
   });
 

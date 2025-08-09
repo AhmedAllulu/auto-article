@@ -501,6 +501,204 @@ Mastering ${topic} requires consistent effort and strategic approach. Follow the
   }
 }
 
+// Lightweight translation caller to avoid heavy content briefs and web search
+export async function translateArticleViaAPI({
+  masterTitle,
+  masterContent,
+  targetLanguage,
+  maxWords = 1500,
+  monthlyTokensUsed = 0
+}) {
+  if (!config.ai.apiKey) {
+    const translatedTitle = `${masterTitle} (${targetLanguage})`;
+    const translatedContent = `# ${translatedTitle}\n\n${masterContent}`;
+    return {
+      title: translatedTitle,
+      content: translatedContent,
+      summary: masterContent.slice(0, 250) + '...',
+      metaDescription: masterContent.slice(0, 160),
+      imageUrl: null,
+      tokensIn: 150,
+      tokensOut: 350,
+      model: 'mock-translation'
+    };
+  }
+
+  const categorySlugLower = 'translation';
+
+  try {
+    // Cost-efficient model for translations
+    const selectedModel = selectCostEfficientModel(targetLanguage, categorySlugLower, 'low', monthlyTokensUsed);
+    const model = mapProviderModelName(selectedModel);
+
+    const languageNames = {
+      'en': 'English', 'es': 'Spanish', 'de': 'German', 'fr': 'French',
+      'ar': 'Arabic', 'hi': 'Hindi', 'pt': 'Portuguese'
+    };
+    const targetLanguageName = languageNames[targetLanguage] || targetLanguage;
+
+    const translationPrompt = [
+      `Translate the following article to ${targetLanguageName}.`,
+      `- Maintain professional tone`,
+      `- Keep all headings and structure (H2/H3)`,
+      `- Adapt cultural references`,
+      `- Preserve SEO keywords when applicable`,
+      `- Keep roughly the same article length`,
+      '',
+      `Title: ${masterTitle}`,
+      '',
+      masterContent,
+      '',
+      'Output format:',
+      '1. Title (as a single H1 heading starting with # )',
+      '2. Meta Description (one concise sentence)',
+      '3. Summary (2-3 sentences)',
+      '4. Article content with H2/H3 structure'
+    ].join('\n');
+
+    const estimatedInputTokens = roughTokenEstimate(translationPrompt, model, 'input');
+    const estimatedOutputTokens = maxWords * 1.2;
+    const estimatedCost = estimateTokenCost(estimatedInputTokens, estimatedOutputTokens, model);
+
+    logger.info({
+      model,
+      targetLanguage,
+      estimatedInputTokens,
+      estimatedOutputTokens,
+      estimatedCost,
+      promptLength: translationPrompt.length
+    }, 'Starting cost-optimized translation');
+
+    const requestPayload = {
+      type: 'CHAT_WITH_AI',
+      model,
+      promptObject: {
+        prompt: translationPrompt,
+        isMixed: false,
+        imageList: [],
+        webSearch: false,
+        numOfSite: 0,
+        maxWord: maxWords,
+        temperature: 0.3,
+        language: targetLanguage
+      }
+    };
+
+    const response = await axios.post(
+      `${config.ai.baseUrl}/api/features`,
+      requestPayload,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'API-KEY': config.ai.apiKey
+        },
+        params: { isStreaming: false },
+        timeout: 60_000
+      }
+    );
+
+    const data = response.data || {};
+    let content = '';
+    const aiRecord = data.aiRecord;
+    const resultObject = aiRecord?.aiRecordDetail?.resultObject;
+    if (Array.isArray(resultObject)) {
+      content = resultObject.filter(Boolean).map(item => String(item)).join('\n\n');
+    } else if (typeof resultObject === 'string') {
+      content = resultObject;
+    }
+    if (!content) {
+      content = data.text || data.content || aiRecord?.content || '';
+    }
+    const usage = data.usage || {};
+
+    // Parse structured parts similar to generateArticleViaAPI
+    const lines = content.split('\n');
+    let title = '';
+    let metaDescription = '';
+    let summary = '';
+    let articleContent = content;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (line.startsWith('# ') && !title) {
+        title = line.replace(/^#\s*/, '').trim();
+      }
+      if (line.toLowerCase().includes('meta description:')) {
+        metaDescription = lines[i + 1]?.trim() || '';
+      }
+      if (line.toLowerCase().includes('summary:')) {
+        summary = lines[i + 1]?.trim() || '';
+      }
+    }
+
+    if (!title) {
+      const titleMatch = content.match(/^#\s*(.+)$/m);
+      title = titleMatch ? titleMatch[1].trim() : `${masterTitle} (${targetLanguage})`;
+    }
+    if (!summary) {
+      const paragraphs = content.split('\n\n').filter(p => p.trim().length > 50);
+      summary = paragraphs[0]?.slice(0, 250) + '...' || `Translation of ${masterTitle}`;
+    }
+    if (!metaDescription) {
+      metaDescription = summary.slice(0, 160);
+    }
+
+    try {
+      const allLines = content.split('\n');
+      let startIdx = 0;
+      const isMetaHeading = (line) => /^##\s+(meta\s+description|summary)\b/i.test(line.trim());
+      for (let i = 0; i < allLines.length; i++) {
+        const line = allLines[i];
+        if (/^---\s*$/.test(line.trim())) { startIdx = i + 1; break; }
+        if (/^##\s+/.test(line.trim())) {
+          if (!isMetaHeading(line)) { startIdx = i; break; }
+        }
+      }
+      const kept = allLines.slice(startIdx);
+      while (kept.length && kept[0].trim() === '') kept.shift();
+      articleContent = kept.join('\n').trim() || content.trim();
+    } catch (_) {
+      articleContent = content;
+    }
+
+    const tokensIn = Number(usage.prompt_tokens || roughTokenEstimate(translationPrompt, selectedModel, 'input'));
+    const tokensOut = Number(usage.completion_tokens || roughTokenEstimate(content, selectedModel, 'output'));
+    const actualCost = estimateTokenCost(tokensIn, tokensOut, model);
+
+    logger.info({
+      model: selectedModel,
+      tokensIn,
+      tokensOut,
+      actualCost,
+      title: title.slice(0, 50)
+    }, 'Translation generated successfully');
+
+    return {
+      title: title.slice(0, 180),
+      content: articleContent,
+      summary: summary.slice(0, 400),
+      metaDescription: metaDescription.slice(0, 160),
+      imageUrl: null,
+      tokensIn,
+      tokensOut,
+      model: selectedModel,
+      estimatedCost: actualCost
+    };
+
+  } catch (err) {
+    logger.error({
+      err: err.message,
+      targetLanguage
+    }, 'Translation API call failed');
+    if (err.response?.status === 401) {
+      throw new Error('Invalid API key for 1min.ai');
+    } else if (err.response?.status === 429) {
+      throw new Error('Rate limit exceeded on 1min.ai API');
+    }
+    throw err;
+  }
+}
+
 // Export للتحكم في التكلفة
 export { 
   AVAILABLE_MODELS, 

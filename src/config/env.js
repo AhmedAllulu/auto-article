@@ -344,6 +344,8 @@ export const config = Object.freeze({
     enableContentVersioning: getEnvBoolean('ENABLE_CONTENT_VERSIONING', false),  // معطل
     enableAutoTranslation: getEnvBoolean('ENABLE_AUTO_TRANSLATION', false),      // معطل
     enableContentRecommendations: getEnvBoolean('ENABLE_CONTENT_RECOMMENDATIONS', false), // معطل
+    // Master+Translation mode
+    enableMasterTranslationMode: getEnvBoolean('ENABLE_MASTER_TRANSLATION_MODE', true),
     
     // ميزات جديدة للربحية
     enableProfitabilityTracking: getEnvBoolean('ENABLE_PROFITABILITY_TRACKING', true),

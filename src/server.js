@@ -17,7 +17,7 @@ import categoriesRouter from './routes/categories.js';
 import healthRouter from './routes/health.js';
 
 // Services
-import { scheduleArticleGeneration } from './services/articleGeneratorService.js';
+import { scheduleArticleGeneration, scheduleMasterTranslationGeneration } from './services/articleGeneratorService.js';
 import { startBudgetMonitoring, getCurrentBudgetStatus, getBudgetReport } from './services/budgetMonitorService.js';
 import { systemHealth, quickHealthCheck } from './services/systemHealthService.js';
 import { validateAITrendsService, getAITrendsStatistics } from './services/trendsService.js';
@@ -612,9 +612,16 @@ async function startServer() {
     const { intervalTask, dailyTask } = startBudgetMonitoring();
     logger.info('Budget monitoring service started');
 
-    // Start article generation scheduler
-    const generationTask = scheduleArticleGeneration();
-    logger.info('Article generation scheduler started');
+    // Start generation scheduler (choose mode)
+    let generationTask = null;
+    let masterTranslationTask = null;
+    if (config.features?.enableMasterTranslationMode) {
+      masterTranslationTask = scheduleMasterTranslationGeneration();
+      logger.info('Master+Translation scheduler started');
+    } else {
+      generationTask = scheduleArticleGeneration();
+      logger.info('Article generation scheduler started');
+    }
 
     // If trends cache is already warm at startup, trigger a small immediate generation
     setTimeout(async () => {
@@ -656,6 +663,7 @@ async function startServer() {
       try {
         logger.info('Cleaning up background tasks...');
         try { generationTask?.stop(); } catch (_) {}
+        try { masterTranslationTask?.stop(); } catch (_) {}
         try { intervalTask?.stop(); } catch (_) {}
         try { dailyTask?.stop(); } catch (_) {}
         const { pool } = await import('./db/pool.js');
