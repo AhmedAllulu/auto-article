@@ -48,7 +48,8 @@ const options = {
             id: { type: 'integer', description: 'Category ID' },
             name: { type: 'string', description: 'Category name' },
             slug: { type: 'string', description: 'URL-friendly slug' },
-            description: { type: 'string', description: 'Category description' }
+            description: { type: 'string', description: 'Category description' },
+            article_count: { type: 'integer', description: 'Number of articles in this category for the selected language' }
           }
         },
         HealthCheck: {

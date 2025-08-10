@@ -14,6 +14,7 @@ import { specs } from './swagger.js';
 // Routes
 import articlesRouter from './routes/articles.js';
 import categoriesRouter from './routes/categories.js';
+import { languageMiddleware } from './middleware/language.js';
 import healthRouter from './routes/health.js';
 
 // Services
@@ -54,6 +55,9 @@ app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Rate limiting
 app.use(rateLimiterMiddleware);
+
+// Language negotiation for all public endpoints
+app.use(languageMiddleware);
 
 // Swagger documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs, {
@@ -438,6 +442,9 @@ app.get('/admin/config', adminAuth, async (req, res) => {
 // Manual generation trigger (admin only)
 app.post('/admin/generate', adminAuth, async (req, res) => {
   try {
+    if (!config.features?.enableGeneration) {
+      return res.status(403).json({ success: false, error: 'Generation is disabled by configuration' });
+    }
     const { 
       batchSize = 1, 
       language = null, 
@@ -549,7 +556,7 @@ async function startServer() {
     logger.info('Validating services...');
     
     // Test trends service if enabled
-    if (config.trends.enabled) {
+    if (config.trends.enabled && config.features?.enableGeneration) {
       try {
         const trendsValidation = await validateAITrendsService();
         if (trendsValidation.healthy) {
@@ -612,20 +619,28 @@ async function startServer() {
     const { intervalTask, dailyTask } = startBudgetMonitoring();
     logger.info('Budget monitoring service started');
 
-    // Start generation scheduler (choose mode)
+    // Start generation scheduler (choose mode) — gated by enableGeneration
     let generationTask = null;
     let masterTranslationTask = null;
-    if (config.features?.enableMasterTranslationMode) {
-      masterTranslationTask = scheduleMasterTranslationGeneration();
-      logger.info('Master+Translation scheduler started');
+    if (config.features?.enableGeneration) {
+      if (config.features?.enableMasterTranslationMode) {
+        masterTranslationTask = scheduleMasterTranslationGeneration();
+        logger.info('Master+Translation scheduler started');
+      } else {
+        generationTask = scheduleArticleGeneration();
+        logger.info('Article generation scheduler started');
+      }
     } else {
-      generationTask = scheduleArticleGeneration();
-      logger.info('Article generation scheduler started');
+      logger.warn('Article generation is disabled by feature flag ENABLE_GENERATION=false');
     }
 
     // If trends cache is already warm at startup, trigger a small immediate generation
     setTimeout(async () => {
       try {
+        if (!config.features?.enableGeneration || !config.features?.enableImmediateGenerationOnStart) {
+          logger.info('Immediate generation on start is disabled by feature flags');
+          return;
+        }
         const trendsStats = await getAITrendsStatistics();
         if (trendsStats.cacheSize && trendsStats.cacheSize > 0) {
           logger.info({ cacheSize: trendsStats.cacheSize }, 'Trends cache detected at startup; triggering immediate generation');

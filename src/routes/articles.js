@@ -86,7 +86,8 @@ router.get('/', async (req, res) => {
   const parse = listSchema.safeParse(req.query);
   if (!parse.success) return res.status(400).json({ error: 'Invalid query' });
   const { language, category, search, page, pageSize } = parse.data;
-  const rows = await getArticles({ language, categorySlug: category, search, page, pageSize });
+  const effectiveLanguage = language || req.languageCode;
+  const rows = await getArticles({ language: effectiveLanguage, categorySlug: category, search, page, pageSize });
   res.json({ items: rows });
 });
 

@@ -26,7 +26,7 @@ const router = Router();
  *                   description: Current server time
  */
 router.get('/', (req, res) => {
-  res.json({ ok: true, time: new Date().toISOString() });
+  res.json({ ok: true, time: new Date().toISOString(), language: req.languageCode });
 });
 
 export default router;

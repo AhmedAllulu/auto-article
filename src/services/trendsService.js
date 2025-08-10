@@ -79,6 +79,10 @@ export async function discoverTrendingTopicsWithAI({
   maxPerCategory = 3,
   categories = null 
 }) {
+  // Honor global generation toggle and trends enable flag
+  if (!config.trends.enabled || !config.features?.enableGeneration) {
+    return [];
+  }
   const startTime = Date.now();
   const topics = [];
   const errors = [];

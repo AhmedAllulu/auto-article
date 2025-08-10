@@ -8,8 +8,16 @@ const router = Router();
  * /v1/categories:
  *   get:
  *     summary: List categories
- *     description: Retrieve all available article categories
+ *     description: Retrieve available article categories. When a language is specified, categories are filtered to those that have articles in that language and include an article_count.
  *     tags: [Categories]
+ *     parameters:
+ *       - in: query
+ *         name: language
+ *         schema:
+ *           type: string
+ *           minLength: 2
+ *           maxLength: 5
+ *         description: Language code to filter categories and counts (defaults to detected user language)
  *     responses:
  *       200:
  *         description: Categories retrieved successfully
@@ -24,7 +32,7 @@ const router = Router();
  *                     $ref: '#/components/schemas/Category'
  */
 router.get('/', async (req, res) => {
-  const categories = await listCategories();
+  const categories = await listCategories({ language: req.query.language || req.languageCode });
   res.json({ items: categories });
 });
 

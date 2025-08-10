@@ -9,6 +9,12 @@ import { generateArticleViaAPI, translateArticleViaAPI } from './aiClient.js';
 import { buildMeta, createSlug, estimateReadingTimeMinutes } from '../utils/seo.js';
 import { discoverTrendingTopicsWithAI } from './trendsService.js';
 import { canRunOperation } from './budgetMonitorService.js';
+import { withLock } from './persistentLockService.js';
+import { initQueue, resetQueue, getQueueSnapshot, peekNextItem, commitIndex, isForToday } from './persistentQueueService.js';
+import { getTrendsWithResilience } from './trendsFacadeService.js';
+import { config as appConfig } from '../config/env.js';
+import { getAdjustedEstimate, updateEstimate } from './budgetLearningService.js';
+import { startCacheMaintenance } from './cacheMaintenanceService.js';
 
 // Same profitability strategy (keeping existing business logic)
 const PROFITABILITY_STRATEGY = {
@@ -121,7 +127,7 @@ async function selectProfitableTargetsWithAI(plannedDistribution) {
   
   logger.info('Starting AI-powered profitable targets selection');
   
-  // **MUCH SIMPLER: Get AI trends for all languages we need**
+  // Skip external trend discovery entirely if disabled; fall back to generic topics
   const languageEntries = Object.entries(plannedDistribution.byLanguage)
     .filter(([_, count]) => count > 0)
     .sort(([, a], [, b]) => b - a); // Sort by article count (priority languages first)
@@ -132,29 +138,17 @@ async function selectProfitableTargetsWithAI(plannedDistribution) {
   for (const [languageCode, targetCount] of languageEntries) {
     if (targetCount === 0) continue;
     
+    if (!appConfig.features?.enableTrendDiscovery) {
+      aiTrendsByLanguage[languageCode] = [];
+      continue;
+    }
     logger.info({ languageCode, targetCount }, 'Discovering AI trends for language');
-    
     try {
       const langConfig = PROFITABILITY_STRATEGY.LANGUAGE_DISTRIBUTION[languageCode];
-      
-      // **AI MAGIC: Ask AI to find trending topics for this language**
-      const aiTrends = await discoverTrendingTopicsWithAI({
-        languageCode,
-        maxPerCategory: 3,
-        categories: langConfig.categories // Focus on profitable categories
-      });
-      
+      const aiTrends = await getTrendsWithResilience({ languageCode, maxPerCategory: 3, categories: langConfig.categories });
       aiTrendsByLanguage[languageCode] = aiTrends;
-      
-      logger.info({ 
-        languageCode,
-        aiTrendsCount: aiTrends.length,
-        categories: [...new Set(aiTrends.map(t => t.category))],
-        sampleTopics: aiTrends.slice(0, 2).map(t => t.topic.slice(0, 60))
-      }, 'AI trends discovered successfully');
-      
-    } catch (err) {
-      logger.warn({ err, languageCode }, 'AI trends discovery failed, using fallback');
+      logger.info({ languageCode, aiTrendsCount: aiTrends.length }, 'AI trends discovered successfully');
+    } catch {
       aiTrendsByLanguage[languageCode] = [];
     }
   }
@@ -171,47 +165,25 @@ async function selectProfitableTargetsWithAI(plannedDistribution) {
       
       if (!category) continue;
       
-      // **AI-FIRST: Use AI trends when available (80% chance)**
-      const relevantAITrends = aiTrends.filter(t => t.category === categorySlug);
+      // Always derive topic without external trend discovery (prompt instructs AI to include current trends)
       let topic, contentType, trendBased = false;
+      const catPriority = PROFITABILITY_STRATEGY.CATEGORY_DISTRIBUTION[categorySlug]?.priority || 5;
+      const profitableKeywords = {
+        'technology': ['AI automation', 'cloud security', 'digital transformation', 'software development'],
+        'finance': ['investment strategies', 'financial planning', 'cryptocurrency analysis', 'market trends'],
+        'business': ['business growth', 'startup success', 'marketing automation', 'leadership'],
+        'health': ['wellness tips', 'nutrition guide', 'fitness routine', 'mental health'],
+        'travel': ['travel destinations', 'budget travel', 'travel safety', 'local culture'],
+        'sports': ['training methods', 'sports nutrition', 'athletic performance', 'sports news'],
+        'entertainment': ['celebrity news', 'movie reviews', 'music trends', 'gaming']
+      };
+      const keywords = profitableKeywords[categorySlug] || ['general guide'];
+      const selectedKeyword = keywords[Math.floor(Math.random() * keywords.length)];
+      topic = `Most trending ${categorySlug}: ${selectedKeyword}`;
+      contentType = catPriority <= 3 ? 'HIGH_VALUE_SEO' : 'PRACTICAL_GUIDE';
       
-      if (relevantAITrends.length > 0 && Math.random() < 0.8) {
-        // **AI TRENDING TOPIC**
-        const selectedTrend = relevantAITrends[Math.floor(Math.random() * relevantAITrends.length)];
-        topic = selectedTrend.topic;
-        contentType = 'TRENDING_NEWS';
-        trendBased = true;
-        
-        logger.debug({ 
-          languageCode, 
-          categorySlug, 
-          aiTopic: selectedTrend.topic.slice(0, 50),
-          source: selectedTrend.source
-        }, 'Using AI-discovered trend');
-        
-      } else {
-        // **TRADITIONAL HIGH-VALUE TOPIC**
-        const categoryPriority = PROFITABILITY_STRATEGY.CATEGORY_DISTRIBUTION[categorySlug]?.priority || 5;
-        
-        const profitableKeywords = {
-          'technology': ['AI automation', 'cloud security', 'digital transformation', 'software development'],
-          'finance': ['investment strategies', 'financial planning', 'cryptocurrency analysis', 'market trends'],
-          'business': ['business growth', 'startup success', 'marketing automation', 'leadership'],
-          'health': ['wellness tips', 'nutrition guide', 'fitness routine', 'mental health'],
-          'travel': ['travel destinations', 'budget travel', 'travel safety', 'local culture'],
-          'sports': ['training methods', 'sports nutrition', 'athletic performance', 'sports news'],
-          'entertainment': ['celebrity news', 'movie reviews', 'music trends', 'gaming']
-        };
-        
-        const keywords = profitableKeywords[categorySlug] || ['general guide'];
-        const selectedKeyword = keywords[Math.floor(Math.random() * keywords.length)];
-        topic = `Ultimate Guide to ${selectedKeyword}: Expert Tips and Strategies`;
-        
-        contentType = categoryPriority <= 3 ? 'HIGH_VALUE_SEO' : 'PRACTICAL_GUIDE';
-      }
-      
-      const categoryPriority = PROFITABILITY_STRATEGY.CATEGORY_DISTRIBUTION[categorySlug]?.priority || 5;
-      const complexity = categoryPriority <= 2 ? 'high' : categoryPriority <= 4 ? 'medium' : 'low';
+      const categoryPriority = catPriority;
+      const complexity = catPriority <= 2 ? 'high' : catPriority <= 4 ? 'medium' : 'low';
       
       targets.push({
         languageCode,
@@ -228,7 +200,7 @@ async function selectProfitableTargetsWithAI(plannedDistribution) {
         profitabilityScore: langConfig.avgRPM * (6 - categoryPriority),
         trendBased,
         aiPowered: trendBased, // Mark AI-powered articles
-        useWebSearch: trendBased // Use web search for AI trends
+        useWebSearch: false // rely on prompt to include current trends; avoid extra web search cost
       });
     }
   }
@@ -263,7 +235,8 @@ async function generateOne(target, monthlyTokensUsed = 0) {
 
   try {
     const plannedMaxWords = target.complexity === 'high' ? 1500 : target.complexity === 'medium' ? 1200 : 1000;
-    const estimatedTokensForArticle = target.complexity === 'high' ? 2400 : target.complexity === 'medium' ? 1900 : 1600;
+    const baseEstimate = target.complexity === 'high' ? 2400 : target.complexity === 'medium' ? 1900 : 1600;
+    const estimatedTokensForArticle = await getAdjustedEstimate(target.contentType, target.languageCode, baseEstimate);
 
     const permission = await canRunOperation(estimatedTokensForArticle);
     if (!permission.allowed) {
@@ -356,13 +329,15 @@ async function generateOne(target, monthlyTokensUsed = 0) {
       }, 'AI-enhanced profitable article generated successfully');
     }
 
-    return { 
+    const ret = { 
       article, 
       tokens: (tokensIn || 0) + (tokensOut || 0),
       generationTime: Date.now() - startTime,
       estimatedCost,
       profitabilityScore: target.profitabilityScore
     };
+    try { await updateEstimate(target.contentType, target.languageCode, estimatedTokensForArticle, ret.tokens); } catch {}
+    return ret;
 
   } catch (err) {
     const generationTime = Date.now() - startTime;
@@ -404,132 +379,128 @@ export function scheduleArticleGeneration() {
     aiPoweredTrends: 'enabled',
     webSearchIntegration: 'enabled'
   }, 'AI-enhanced profitable article generation scheduler started');
+  startCacheMaintenance();
 
   const task = cron.schedule(config.generation.schedule, async () => {
     const runStartTime = Date.now();
     
     try {
       logger.info('Starting AI-enhanced profitable article generation run');
-      
-      const tokenBudget = await calculateTokenBudget();
-      const remainingArticles = await remainingArticlesForToday();
-      
-      logger.info({ tokenBudget, remainingArticles }, 'Budget and targets calculated');
-      
-      if (remainingArticles <= 0) {
-        logger.info('Daily target reached; skipping run');
-        return;
-      }
-
-      if (tokenBudget.totalRemaining <= 0) {
-        logger.warn({ 
-          monthlyTokenCap: config.generation.monthlyTokenCap,
-          utilizationRate: tokenBudget.utilizationRate
-        }, 'Monthly token cap reached; skipping');
-        return;
-      }
-
-      const maxByTokens = Math.floor(tokenBudget.dailyBudget / 2500);
-      if (maxByTokens <= 0) {
-        logger.info({ dailyBudget: tokenBudget.dailyBudget }, 'Insufficient daily token budget; skipping run');
-        return;
-      }
-
-      const plannedBatch = Math.min(config.generation.maxBatchPerRun, remainingArticles, maxByTokens);
-      const distribution = calculateOptimalDistribution(plannedBatch, tokenBudget);
-      
-      // **AI MAGIC: Get targets with AI trends**
-      const targets = await selectProfitableTargetsWithAI(distribution);
-
-      if (targets.length === 0) {
-        logger.warn('No AI-enhanced targets generated');
-        return;
-      }
-
-      logger.info({
-        plannedBatch,
-        actualTargets: targets.length,
-        distribution,
-        estimatedTotalTokens: targets.reduce((sum, t) => sum + t.estimatedTokens, 0),
-        aiPoweredTargets: targets.filter(t => t.aiPowered).length,
-        webSearchTargets: targets.filter(t => t.useWebSearch).length
-      }, 'Starting AI-enhanced profitable generation batch');
-
-      let generated = 0;
-      let failed = 0;
-      let tokensSpent = 0;
-      let totalProfitabilityScore = 0;
-      const generationStats = {
-        byLanguage: {},
-        byCategory: {},
-        byContentType: {},
-        aiPoweredCount: 0,
-        webSearchUsedCount: 0,
-        totalGenerationTime: 0,
-        avgCostPerArticle: 0
-      };
-
-      for (const target of targets.slice(0, plannedBatch)) {
-        const currentUsage = await getMonthlyTokenUsage(getYearMonth().year, getYearMonth().month);
-        if (currentUsage + tokensSpent >= config.generation.monthlyTokenCap) {
-          logger.warn('Monthly token budget exhausted during batch, stopping');
-          break;
+      await initQueue();
+      const { skipped } = await withLock('generation-runner', async () => {
+        const tokenBudget = await calculateTokenBudget();
+        const remainingArticles = await remainingArticlesForToday();
+        
+        logger.info({ tokenBudget, remainingArticles }, 'Budget and targets calculated');
+        
+        if (remainingArticles <= 0) {
+          logger.info('Daily target reached; skipping run');
+          return;
         }
+        
+        if (tokenBudget.totalRemaining <= 0) {
+          logger.warn({ 
+            monthlyTokenCap: config.generation.monthlyTokenCap,
+            utilizationRate: tokenBudget.utilizationRate
+          }, 'Monthly token cap reached; skipping');
+          return;
+        }
+        
+        const maxByTokens = Math.floor(tokenBudget.dailyBudget / 2500);
+        if (maxByTokens <= 0) {
+          logger.info({ dailyBudget: tokenBudget.dailyBudget }, 'Insufficient daily token budget; skipping run');
+          return;
+        }
+        
+        const plannedBatch = Math.min(config.generation.maxBatchPerRun, remainingArticles, maxByTokens);
 
-        const { article, tokens, generationTime, estimatedCost, profitabilityScore } = 
-          await generateOne(target, currentUsage + tokensSpent);
-        
-        generationStats.totalGenerationTime += generationTime;
-        
-        if (article) {
-          generated += 1;
-          tokensSpent += tokens;
-          totalProfitabilityScore += profitabilityScore;
-          
-          generationStats.byLanguage[target.languageCode] = 
-            (generationStats.byLanguage[target.languageCode] || 0) + 1;
-          generationStats.byCategory[target.categorySlug] = 
-            (generationStats.byCategory[target.categorySlug] || 0) + 1;
-          generationStats.byContentType[target.contentType] = 
-            (generationStats.byContentType[target.contentType] || 0) + 1;
-          
-          if (target.aiPowered) generationStats.aiPoweredCount += 1;
-          if (target.useWebSearch) generationStats.webSearchUsedCount += 1;
-          
-          generationStats.avgCostPerArticle += estimatedCost;
+        const snapshot = await getQueueSnapshot();
+        const forToday = await isForToday();
+        const pending = Math.max(0, snapshot.items.length - snapshot.cursor);
+        if (!forToday || pending === 0) {
+          const distribution = calculateOptimalDistribution(plannedBatch, tokenBudget);
+          const targets = await selectProfitableTargetsWithAI(distribution);
+          if (targets.length === 0) {
+            logger.warn('No AI-enhanced targets generated');
+            return;
+          }
+          await resetQueue(targets.slice(0, plannedBatch));
         } else {
-          failed += 1;
+          logger.info({ pending }, 'Resuming from persisted queue');
         }
 
-        // Small delay between articles
-        if (targets.indexOf(target) < targets.length - 1) {
+        let generated = 0;
+        let failed = 0;
+        let tokensSpent = 0;
+        let totalProfitabilityScore = 0;
+        const generationStats = {
+          byLanguage: {},
+          byCategory: {},
+          byContentType: {},
+          aiPoweredCount: 0,
+          webSearchUsedCount: 0,
+          totalGenerationTime: 0,
+          avgCostPerArticle: 0
+        };
+
+        while (generated + failed < plannedBatch) {
+          const peek = await peekNextItem();
+          if (peek.done) break;
+
+          const currentUsage = await getMonthlyTokenUsage(getYearMonth().year, getYearMonth().month);
+          if (currentUsage + tokensSpent >= config.generation.monthlyTokenCap) {
+            logger.warn('Monthly token budget exhausted during batch, stopping');
+            break;
+          }
+
+          const target = peek.value;
+          const { article, tokens, generationTime, estimatedCost, profitabilityScore } = await generateOne(target, currentUsage + tokensSpent);
+          generationStats.totalGenerationTime += generationTime;
+
+          if (article) {
+            generated += 1;
+            tokensSpent += tokens;
+            totalProfitabilityScore += profitabilityScore;
+            generationStats.byLanguage[target.languageCode] = (generationStats.byLanguage[target.languageCode] || 0) + 1;
+            generationStats.byCategory[target.categorySlug] = (generationStats.byCategory[target.categorySlug] || 0) + 1;
+            generationStats.byContentType[target.contentType] = (generationStats.byContentType[target.contentType] || 0) + 1;
+            if (target.aiPowered) generationStats.aiPoweredCount += 1;
+            if (target.useWebSearch) generationStats.webSearchUsedCount += 1;
+            generationStats.avgCostPerArticle += estimatedCost;
+            await commitIndex(peek.index);
+          } else {
+            failed += 1;
+            await commitIndex(peek.index); // prevent infinite retry on hard failures
+          }
+
           await new Promise(resolve => setTimeout(resolve, 1500));
         }
+
+        const runTime = Date.now() - runStartTime;
+        const avgProfitabilityScore = generated > 0 ? totalProfitabilityScore / generated : 0;
+        generationStats.avgCostPerArticle = generated > 0 ? generationStats.avgCostPerArticle / generated : 0;
+
+        logger.info({
+          generated,
+          failed,
+          tokensSpent,
+          plannedBatch,
+          runTimeMs: runTime,
+          averageGenerationTimeMs: generationStats.totalGenerationTime / Math.max(1, generated + failed),
+          avgProfitabilityScore,
+          aiPoweredRate: generated > 0 ? (generationStats.aiPoweredCount / generated) * 100 : 0,
+          webSearchRate: generated > 0 ? (generationStats.webSearchUsedCount / generated) * 100 : 0,
+          stats: generationStats,
+          updatedTokenBudget: {
+            remaining: tokenBudget.totalRemaining - tokensSpent,
+            utilizationRate: ((tokenBudget.usedTokens + tokensSpent) / config.generation.monthlyTokenCap) * 100
+          },
+          approach: 'ai-powered-simplified-resumable'
+        }, 'AI-enhanced profitable generation run completed');
+      });
+      if (skipped) {
+        logger.warn('Another generation run is in progress; skipping this tick');
       }
-
-      // Progress is now persisted per-article; no batch increment needed
-
-      const runTime = Date.now() - runStartTime;
-      const avgProfitabilityScore = generated > 0 ? totalProfitabilityScore / generated : 0;
-      generationStats.avgCostPerArticle = generated > 0 ? generationStats.avgCostPerArticle / generated : 0;
-      
-      logger.info({
-        generated,
-        failed,
-        tokensSpent,
-        plannedBatch,
-        runTimeMs: runTime,
-        averageGenerationTimeMs: Math.round(generationStats.totalGenerationTime / targets.length),
-        avgProfitabilityScore,
-        aiPoweredRate: generated > 0 ? (generationStats.aiPoweredCount / generated) * 100 : 0,
-        webSearchRate: generated > 0 ? (generationStats.webSearchUsedCount / generated) * 100 : 0,
-        stats: generationStats,
-        updatedTokenBudget: {
-          remaining: tokenBudget.totalRemaining - tokensSpent,
-          utilizationRate: ((tokenBudget.usedTokens + tokensSpent) / config.generation.monthlyTokenCap) * 100
-        },
-        approach: 'ai-powered-simplified'
-      }, 'AI-enhanced profitable generation run completed');
 
     } catch (err) {
       const runTime = Date.now() - runStartTime;

@@ -338,6 +338,11 @@ export const config = Object.freeze({
   
   // Feature Flags (محسن للاقتصاد)
   features: {
+    // Global generation toggle
+    enableGeneration: getEnvBoolean('ENABLE_GENERATION', false),
+    enableImmediateGenerationOnStart: getEnvBoolean('ENABLE_IMMEDIATE_GENERATION_ON_START', true),
+    // Disable external trend discovery by default; rely on AI prompt during generation
+    enableTrendDiscovery: getEnvBoolean('ENABLE_TREND_DISCOVERY', false),
     enableExperimentalModels: getEnvBoolean('ENABLE_EXPERIMENTAL_MODELS', false),
     enableA11yOptimization: getEnvBoolean('ENABLE_A11Y_OPTIMIZATION', false),    // معطل
     enableMultimodalContent: getEnvBoolean('ENABLE_MULTIMODAL_CONTENT', false),  // معطل

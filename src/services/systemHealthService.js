@@ -293,7 +293,7 @@ class SystemHealthService {
   // فحص خدمة Google Trends
   async checkTrendsService() {
     try {
-      if (!config.trends.enabled) {
+      if (!config.trends.enabled || !config.features?.enableGeneration) {
         return {
           healthy: true,
           critical: false,
