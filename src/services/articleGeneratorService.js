@@ -1438,6 +1438,5 @@ export {
   calculateTokenBudget,
   calculateOptimalDistribution,
   selectProfessionalTargetsWithAI,
-  buildEnhancedProfessionalPrompt,
-  generateNewsBasedArticle
+  buildEnhancedProfessionalPrompt
 };
