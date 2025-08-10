@@ -7,12 +7,10 @@ import { recordTokenUsage, getMonthlyTokenUsage } from '../models/tokenUsageMode
 import { upsertDailyJobTarget, incrementJobProgress, getJobForDay } from '../models/jobModel.js';
 import { generateArticleViaAPI, translateArticleViaAPI } from './aiClient.js';
 import { buildMeta, createSlug, estimateReadingTimeMinutes } from '../utils/seo.js';
-import { discoverTrendingTopicsWithAI } from './trendsService.js';
 import { canRunOperation } from './budgetMonitorService.js';
 import { withLock } from './persistentLockService.js';
 import { initQueue, resetQueue, getQueueSnapshot, peekNextItem, commitIndex, isForToday } from './persistentQueueService.js';
-import { getTrendsWithResilience } from './trendsFacadeService.js';
-import { config as appConfig } from '../config/env.js';
+// Trend discovery is handled in-prompt; no external trend discovery imports
 import { getAdjustedEstimate, updateEstimate } from './budgetLearningService.js';
 import { startCacheMaintenance } from './cacheMaintenanceService.js';
 
@@ -260,6 +258,7 @@ function buildEnhancedProfessionalPrompt({
   const languageName = languageNames[languageCode] || 'English';
   const today = new Date().toISOString().slice(0, 10);
   
+  const autoTrend = !topic || /__AUTO_TREND__/i.test(String(topic)) || /^auto[\s_-]?trend$/i.test(String(topic));
   const professionalPrompt = [
     `# PROFESSIONAL ${contentType.replace('_', ' ')} BRIEF`,
     `**Target Quality**: ${strategy.qualityBenchmark}`,
@@ -268,6 +267,10 @@ function buildEnhancedProfessionalPrompt({
     `**Word Range**: ${strategy.minWords}-${strategy.maxWords} words`,
     newsAngle ? `**News Foundation**: ${newsAngle}` : '',
     variationHint ? `**Unique Angle**: ${variationHint}` : '',
+    '',
+    autoTrend
+      ? `## 🔎 Topic Selection (Auto-Discover)\n- Identify ONE highly trending, newsworthy topic in ${categoryName} now (last 24–72 hours), in ${languageName}.\n- If web search is available, use it to verify recency and credibility.\n- Selection criteria: high impact, strong interest, clear professional implications.\n- Output a single line before the article: \nSelected Topic: <final topic>\n- Base the entire article on this selected topic.`
+      : `## Topic\n- ${String(topic)}`,
     '',
     `## 🎯 MISSION: PROFESSIONAL EXCELLENCE`,
     `Create content that busy ${targetAudience} would:`,
@@ -538,38 +541,12 @@ async function selectProfessionalTargetsWithAI(plannedDistribution) {
   const languageEntries = Object.entries(plannedDistribution.byLanguage)
     .filter(([_, count]) => count > 0)
     .sort(([, a], [, b]) => b - a);
-  
-  // Discover trends for priority languages
-  const aiTrendsByLanguage = {};
-  
-  for (const [languageCode, targetCount] of languageEntries) {
-    if (targetCount === 0) continue;
-    
-    if (!appConfig.features?.enableTrendDiscovery) {
-      aiTrendsByLanguage[languageCode] = [];
-      continue;
-    }
-    
-    logger.info({ languageCode, targetCount }, 'Discovering professional trends for language');
-    try {
-      const langConfig = PROFITABILITY_STRATEGY.LANGUAGE_DISTRIBUTION[languageCode];
-      const aiTrends = await getTrendsWithResilience({ 
-        languageCode, 
-        maxPerCategory: 3, 
-        categories: langConfig.categories 
-      });
-      aiTrendsByLanguage[languageCode] = aiTrends;
-      logger.info({ languageCode, aiTrendsCount: aiTrends.length }, 'Professional trends discovered successfully');
-    } catch {
-      aiTrendsByLanguage[languageCode] = [];
-    }
-  }
+  // External trend discovery removed – topic will be auto-discovered in LLM prompt
   
   // Generate professional targets
   for (const [languageCode, targetCount] of languageEntries) {
     const langConfig = PROFITABILITY_STRATEGY.LANGUAGE_DISTRIBUTION[languageCode];
-    const aiTrends = aiTrendsByLanguage[languageCode] || [];
-    
+    // No pre-fetched trends
     for (let i = 0; i < targetCount; i++) {
       const availableCategories = langConfig.categories;
       const categorySlug = availableCategories[i % availableCategories.length];
@@ -582,48 +559,10 @@ async function selectProfessionalTargetsWithAI(plannedDistribution) {
       const contentType = contentTypes[i % contentTypes.length];
       const strategy = ENHANCED_CONTENT_STRATEGIES[contentType];
       
-      // Enhanced topic generation for professional content
-      let topic, trendBased = false, newsAngle = null;
-      
-      if (aiTrends.length > 0 && Math.random() < 0.7) {
-        // Use AI-discovered trends for professional analysis
-        const trend = aiTrends[Math.floor(Math.random() * aiTrends.length)];
-        topic = `Professional Analysis: ${trend.topic}`;
-        trendBased = true;
-        newsAngle = trend.topic;
-      } else {
-        // Generate professional topics based on category focus
-        const professionalTopics = {
-          'technology': [
-            'Strategic implications of enterprise AI adoption',
-            'Cybersecurity risk management for executives',
-            'Digital transformation ROI optimization',
-            'Technology investment decision frameworks'
-          ],
-          'finance': [
-            'Market volatility impact on corporate strategy',
-            'Investment risk assessment methodologies', 
-            'Financial planning in uncertain economies',
-            'Corporate treasury management best practices'
-          ],
-          'business': [
-            'Leadership effectiveness in remote environments',
-            'Operational excellence through process optimization',
-            'Strategic decision-making under uncertainty',
-            'Organizational change management frameworks'
-          ],
-          'health': [
-            'Healthcare industry transformation strategies',
-            'Medical technology adoption frameworks',
-            'Healthcare cost optimization approaches',
-            'Regulatory compliance in healthcare operations'
-          ]
-        };
-        
-        const categoryTopics = professionalTopics[categorySlug] || professionalTopics.technology;
-        const selectedTopic = categoryTopics[Math.floor(Math.random() * categoryTopics.length)];
-        topic = selectedTopic;
-      }
+      // Always defer topic selection to AI by using AUTO_TREND sentinel
+      let topic = '__AUTO_TREND__';
+      let trendBased = true;
+      let newsAngle = null; // Will be derived by AI
       
       const priority = langConfig.priority + (categoryConfig.priority * 0.1);
       const complexity = categoryConfig.professionalLevel === 'high' ? 'high' : 
@@ -644,7 +583,7 @@ async function selectProfessionalTargetsWithAI(plannedDistribution) {
         profitabilityScore: langConfig.avgRPM * (6 - categoryConfig.priority),
         trendBased,
         aiPowered: trendBased,
-        useWebSearch: strategy.requiresWebSearch || trendBased,
+        useWebSearch: true, // ensure web search for recency while auto-discovering
         professionalGrade: strategy.professionalGrade,
         newsAngle,
         qualityBenchmark: strategy.qualityBenchmark,
@@ -1053,24 +992,9 @@ export function scheduleMasterTranslationGeneration() {
         const contentType = categoryConfig?.preferredTypes?.[0] || 'THOUGHT_LEADERSHIP';
         const strategy = ENHANCED_CONTENT_STRATEGIES[contentType];
 
-        // Use AI to pick a professional topic
-        let masterTopic = `Strategic ${category.slug} analysis for business leaders`;
+        // Defer topic selection to AI in-prompt
+        let masterTopic = '__AUTO_TREND__';
         let newsAngle = null;
-        
-        try {
-          const aiTrends = await discoverTrendingTopicsWithAI({ 
-            languageCode: 'en', 
-            maxPerCategory: 3, 
-            categories: [category.slug] 
-          });
-          const relevant = aiTrends.filter(t => t.category === category.slug);
-          if (relevant.length > 0) {
-            masterTopic = `Professional Analysis: ${relevant[0].topic}`;
-            newsAngle = relevant[0].topic;
-          }
-        } catch (err) {
-          logger.warn({ err, category: category.slug }, 'AI trends fetch failed for master topic, using fallback');
-        }
 
         const prompt = buildEnhancedProfessionalPrompt({
           topic: masterTopic,
@@ -1094,7 +1018,7 @@ export function scheduleMasterTranslationGeneration() {
           contentType,
           targetAudience: 'executives and senior decision makers',
           keywords: [],
-          includeWebSearch: strategy.requiresWebSearch,
+          includeWebSearch: true,
           generateImage: false,
           maxWords: strategy.maxWords,
           complexity: 'high',

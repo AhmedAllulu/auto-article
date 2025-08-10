@@ -246,10 +246,11 @@ class SystemHealthService {
       
       try {
         const testResult = await generateArticleViaAPI({
-          topic: 'System health test',
+          topic: '__AUTO_TREND__',
           languageCode: 'en',
           categoryName: 'technology',
           contentType: 'BLOG_POST',
+          includeWebSearch: true,
           maxWords: 500 // مقال قصير للاختبار
         });
 

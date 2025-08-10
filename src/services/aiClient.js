@@ -137,18 +137,27 @@ function buildOptimizedPrompt({
   const today = new Date();
   const isoDate = today.toISOString().slice(0, 10); // YYYY-MM-DD
   
+  const autoTrend = !topic || /__AUTO_TREND__/i.test(String(topic)) || /^auto[\s_-]?trend$/i.test(String(topic));
   // Prompt غني ومتقدم يركز على القيمة والحداثة وSEO
   const prompt = [
     `# Content Brief`,
     `**Language**: ${languageName}`,
     `**Date**: ${isoDate} (use up-to-date information; avoid outdated years)`,
-    `**Topic**: ${topic}`,
+    autoTrend ? `**Topic**: (auto-discovered trending topic within ${categoryName})` : `**Topic**: ${topic}`,
     `**Type**: ${contentType.replace('_', ' ')}`,
     `**Category**: ${categoryName}`,
     `**Target Audience**: ${targetAudience}`,
     `**Max Words**: ${maxWords}`,
     `**Scope**: ${geoScope} (cover international developments; not country-limited)`,
     variationHint ? `**Variation Hint**: ${variationHint}` : '',
+    '',
+    autoTrend ? `## Topic Selection (Auto-Discover)
+- Identify ONE highly trending, newsworthy topic in ${categoryName} now (last 24–72 hours), in ${languageName}.
+- If web search is available, use it to verify recency and credibility.
+- Selection criteria: high impact, strong interest, clear professional/business implications.
+- Output a single line immediately before the article:
+Selected Topic: <final topic>
+- Base the entire article on this selected topic.` : '',
     '',
     `## Objectives`,
     `- Deliver high-value insights with E-E-A-T (experience, expertise, authoritativeness, trust).`,
@@ -222,7 +231,8 @@ export async function generateArticleViaAPI({
   maxWords = 1500,        // مخفض من 2000
   complexity = 'medium',
   monthlyTokensUsed = 0,
-  modelOverride = null
+  modelOverride = null,
+  customPrompt = null
 }) {
   if (!config.ai.apiKey) {
     // Enhanced development fallback
@@ -268,17 +278,19 @@ Mastering ${topic} requires consistent effort and strategic approach. Follow the
     // اختيار موديل محسن اقتصادياً
     const selectedModel = modelOverride || selectCostEfficientModel(languageCode, categorySlugLower, complexity, monthlyTokensUsed);
     const model = mapProviderModelName(selectedModel);
-    const prompt = buildOptimizedPrompt({ 
-      topic,
-      languageCode,
-      categoryName,
-      contentType,
-      targetAudience,
-      keywords,
-      maxWords,
-      geoScope: 'global',
-      variationHint: `Run-ID ${Date.now()} | Emphasize unique angles and different examples from previous runs.`
-    });
+    const prompt = customPrompt && typeof customPrompt === 'string' && customPrompt.trim().length > 0
+      ? customPrompt
+      : buildOptimizedPrompt({ 
+          topic,
+          languageCode,
+          categoryName,
+          contentType,
+          targetAudience,
+          keywords,
+          maxWords,
+          geoScope: 'global',
+          variationHint: `Run-ID ${Date.now()} | Emphasize unique angles and different examples from previous runs.`
+        });
 
     // تقدير التوكنز قبل الإرسال
     const estimatedInputTokens = roughTokenEstimate(prompt, model, 'input');
