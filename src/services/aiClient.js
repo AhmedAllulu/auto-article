@@ -2,82 +2,28 @@ import axios from 'axios';
 import config from '../config/env.js';
 import logger from '../lib/logger.js';
 
-// Available models مرتبة حسب التكلفة (من الأرخص للأغلى)
+// Available models (restricted to two per request)
 const AVAILABLE_MODELS = {
-  // Cost-effective models (أولوية للاستخدام)
-  GPT_4O_MINI: 'gpt-4o-mini',        // الأرخص - للمقالات البسيطة
-  GEMINI_2_5: 'gemini-2.5',           // متوسط التكلفة - جيد للغات المتعددة
-  MISTRAL_NEMO: 'mistral-nemo',       // اقتصادي - جيد للمحتوى العام
-  
-  // Premium models (استخدام محدود)
-  GPT_4O: 'gpt-4o',                   // مكلف - للمحتوى المتقدم فقط
-  CLAUDE_SONNET_4: 'claude-sonnet-4', // مكلف جداً - للمحتوى التقني فقط
-  CLAUDE_OPUS_4: 'claude-opus-4',     // الأغلى - للمحتوى الممتاز فقط
-  
-  // Specialized models
-  DEEPSEEK_CHAT: 'deepseek-chat',
-  LLAMA_4: 'llama-4',
-  
-  // Image models (معطل حالياً)
-  MIDJOURNEY: 'midjourney',
-  DALL_E_3: 'dall-e-3',
-  STABLE_DIFFUSION: 'stable-diffusion'
+  GPT_4O_MINI: 'gpt-4o-mini',
+  DEEPSEEK_CHAT: 'deepseek-chat'
 };
 
 // 1min.ai provider model mapping
 function mapProviderModelName(selectedModel) {
-  // Known working default on 1min.ai
-  const FALLBACK = AVAILABLE_MODELS.GPT_4O_MINI;
-  // Map internal names to provider-supported identifiers
+  const FALLBACK = 'gpt-4o-mini';
   const MAP = {
     [AVAILABLE_MODELS.GPT_4O_MINI]: 'gpt-4o-mini',
-    [AVAILABLE_MODELS.GEMINI_2_5]: 'gpt-4o-mini',
-    [AVAILABLE_MODELS.MISTRAL_NEMO]: 'gpt-4o-mini',
-    [AVAILABLE_MODELS.GPT_4O]: 'gpt-4o-mini',
-    [AVAILABLE_MODELS.CLAUDE_SONNET_4]: 'gpt-4o-mini',
-    [AVAILABLE_MODELS.CLAUDE_OPUS_4]: 'gpt-4o-mini',
-    [AVAILABLE_MODELS.DEEPSEEK_CHAT]: 'gpt-4o-mini',
-    [AVAILABLE_MODELS.LLAMA_4]: 'gpt-4o-mini'
+    [AVAILABLE_MODELS.DEEPSEEK_CHAT]: 'deepseek-chat'
   };
   return MAP[selectedModel] || FALLBACK;
 }
 
 // استراتيجية اختيار الموديل الاقتصادية
 const COST_EFFICIENT_MODEL_STRATEGY = {
-  // 80% من المقالات تستخدم النماذج الاقتصادية
-  BUDGET_MODELS: [
-    AVAILABLE_MODELS.GPT_4O_MINI,    // 50% من الإجمالي
-    AVAILABLE_MODELS.GEMINI_2_5,     // 20% من الإجمالي  
-    AVAILABLE_MODELS.MISTRAL_NEMO    // 10% من الإجمالي
-  ],
-  
-  // 20% فقط للنماذج المتقدمة (للمحتوى عالي القيمة)
-  PREMIUM_MODELS: [
-    AVAILABLE_MODELS.GPT_4O,         // 15% من الإجمالي
-    AVAILABLE_MODELS.CLAUDE_SONNET_4 // 5% من الإجمالي
-  ],
-  
-  // أولويات حسب نوع المحتوى
-  CONTENT_TYPE_PRIORITY: {
-    'technology': 'premium',    // تقنية = محتوى عالي القيمة
-    'finance': 'premium',       // مالية = محتوى عالي القيمة
-    'business': 'premium',      // أعمال = محتوى عالي القيمة
-    'health': 'balanced',       // صحة = متوازن
-    'sports': 'budget',         // رياضة = اقتصادي
-    'entertainment': 'budget',  // ترفيه = اقتصادي
-    'travel': 'budget'          // سفر = اقتصادي
-  },
-  
-  // أولويات حسب اللغة (حسب معدل الربح)
-  LANGUAGE_PRIORITY: {
-    'en': 'premium',    // إنجليزية = أعلى ربح
-    'de': 'premium',    // ألمانية = ربح عالي
-    'fr': 'balanced',   // فرنسية = ربح متوسط
-    'es': 'balanced',   // إسبانية = ربح متوسط
-    'pt': 'budget',     // برتغالية = ربح منخفض
-    'ar': 'budget',     // عربية = ربح منخفض
-    'hi': 'budget'      // هندية = ربح منخفض
-  }
+  BUDGET_MODELS: [AVAILABLE_MODELS.GPT_4O_MINI, AVAILABLE_MODELS.DEEPSEEK_CHAT],
+  PREMIUM_MODELS: [],
+  CONTENT_TYPE_PRIORITY: {},
+  LANGUAGE_PRIORITY: {}
 };
 
 // تقدير توكنز أكثر دقة حسب الموديل
@@ -85,32 +31,13 @@ const TOKEN_ESTIMATION_BY_MODEL = {
   [AVAILABLE_MODELS.GPT_4O_MINI]: {
     inputDivisor: 4.0,
     outputDivisor: 4.0,
-    costMultiplier: 1.0      // مرجع التكلفة
+    costMultiplier: 1.0
   },
-  [AVAILABLE_MODELS.GEMINI_2_5]: {
-    inputDivisor: 3.8,
-    outputDivisor: 3.8,
-    costMultiplier: 1.2
-  },
-  [AVAILABLE_MODELS.MISTRAL_NEMO]: {
-    inputDivisor: 4.2,
-    outputDivisor: 4.2,
-    costMultiplier: 1.1
-  },
-  [AVAILABLE_MODELS.GPT_4O]: {
+  // DeepSeek is generally cheaper; treat as ~30% of gpt-4o-mini cost in estimator
+  [AVAILABLE_MODELS.DEEPSEEK_CHAT]: {
     inputDivisor: 4.0,
     outputDivisor: 4.0,
-    costMultiplier: 8.0      // أغلى بـ 8 مرات
-  },
-  [AVAILABLE_MODELS.CLAUDE_SONNET_4]: {
-    inputDivisor: 3.5,
-    outputDivisor: 3.5,
-    costMultiplier: 12.0     // أغلى بـ 12 مرة
-  },
-  [AVAILABLE_MODELS.CLAUDE_OPUS_4]: {
-    inputDivisor: 3.0,
-    outputDivisor: 3.0,
-    costMultiplier: 25.0     // أغلى بـ 25 مرة
+    costMultiplier: 0.3
   }
 };
 
@@ -132,36 +59,22 @@ function estimateTokenCost(inputTokens, outputTokens, model) {
 
 // اختيار موديل ثابت واقتصادي: دائماً gpt-4o-mini وبميزانية يومية ثابتة = 4,000,000 / 30
 function selectCostEfficientModel(languageCode, categorySlug, complexity = 'medium', monthlyTokensUsed = 0, monthlyTokenLimit = 4000000) {
-  // فرض ميزانية يومية ثابتة بغض النظر عن الاستخدام
-  const forcedDailyTokenBudget = Math.floor(monthlyTokenLimit / 30);
+  // Prefer DeepSeek for maximum savings; fallback to gpt-4o-mini
   const remainingTokens = Math.max(0, monthlyTokenLimit - monthlyTokensUsed);
-
-  const selectedModel = AVAILABLE_MODELS.GPT_4O_MINI;
-
-  logger.info({
-    languageCode,
-    categorySlug,
-    complexity,
-    categoryPriority: 'forced-budget',
-    languagePriority: 'forced-budget',
-    finalPriority: 'budget',
-    selectedModel,
-    dailyTokenBudget: forcedDailyTokenBudget,
-    remainingTokens
-  }, 'Model selected with cost optimization');
-  
+  const selectedModel = AVAILABLE_MODELS.DEEPSEEK_CHAT;
+  logger.info({ languageCode, categorySlug, complexity, selectedModel, remainingTokens }, 'Model selected (lean: deepseek)');
   return selectedModel;
 }
 
-// Language-specific model recommendations (مع التركيز على الاقتصاد)
+// Language-specific model recommendations (collapsed)
 const LANGUAGE_MODEL_MAP = {
-  'en': AVAILABLE_MODELS.GPT_4O_MINI,    // إنجليزية = gpt-4o-mini (اقتصادي)
-  'es': AVAILABLE_MODELS.GPT_4O_MINI,    // إسبانية = gpt-4o-mini
-  'de': AVAILABLE_MODELS.GEMINI_2_5,     // ألمانية = gemini (أفضل للألمانية)
-  'fr': AVAILABLE_MODELS.GEMINI_2_5,     // فرنسية = gemini
-  'ar': AVAILABLE_MODELS.GEMINI_2_5,     // عربية = gemini (أفضل للعربية)
-  'hi': AVAILABLE_MODELS.GEMINI_2_5,     // هندية = gemini
-  'pt': AVAILABLE_MODELS.GPT_4O_MINI,    // برتغالية = gpt-4o-mini
+  'en': AVAILABLE_MODELS.GPT_4O_MINI,
+  'es': AVAILABLE_MODELS.GPT_4O_MINI,
+  'de': AVAILABLE_MODELS.GPT_4O_MINI,
+  'fr': AVAILABLE_MODELS.GPT_4O_MINI,
+  'ar': AVAILABLE_MODELS.GPT_4O_MINI,
+  'hi': AVAILABLE_MODELS.GPT_4O_MINI,
+  'pt': AVAILABLE_MODELS.GPT_4O_MINI,
   'default': AVAILABLE_MODELS.GPT_4O_MINI
 };
 
@@ -204,7 +117,9 @@ function buildOptimizedPrompt({
   contentType = 'SEO_ARTICLE',
   targetAudience = 'general web readers',
   keywords = [],
-  maxWords = 1500    // مخفض من 2000
+  maxWords = 1500,    // مخفض من 2000
+  geoScope = 'global',
+  variationHint = ''
 }) {
   const style = WRITING_STYLES[contentType] || WRITING_STYLES.SEO_ARTICLE;
   
@@ -219,30 +134,76 @@ function buildOptimizedPrompt({
   };
   
   const languageName = languageNames[languageCode] || 'English';
+  const today = new Date();
+  const isoDate = today.toISOString().slice(0, 10); // YYYY-MM-DD
   
-  // بناء prompt محسن ومختصر لتوفير التوكنز
+  // Prompt غني ومتقدم يركز على القيمة والحداثة وSEO
   const prompt = [
     `# Content Brief`,
     `**Language**: ${languageName}`,
+    `**Date**: ${isoDate} (use up-to-date information; avoid outdated years)`,
     `**Topic**: ${topic}`,
     `**Type**: ${contentType.replace('_', ' ')}`,
     `**Category**: ${categoryName}`,
+    `**Target Audience**: ${targetAudience}`,
     `**Max Words**: ${maxWords}`,
-    `**Target**: ${targetAudience}`,
+    `**Scope**: ${geoScope} (cover international developments; not country-limited)`,
+    variationHint ? `**Variation Hint**: ${variationHint}` : '',
     '',
-    `## Requirements`,
-    `- **Style**: ${style.tone}`,
-    `- **Structure**: ${style.structure}`,
-    `- **Features**: ${style.features}`,
-    keywords.length > 0 ? `- **Keywords**: ${keywords.slice(0, 5).join(', ')}` : '',
+    `## Objectives`,
+    `- Deliver high-value insights with E-E-A-T (experience, expertise, authoritativeness, trust).`,
+    `- Be practical and actionable with clear steps, examples, and recent references.`,
+    `- Maintain accuracy and avoid speculation or hallucinations.`,
+    `- Provide a GLOBAL view: summarize what's happening across regions (Americas, EMEA, APAC).`,
     '',
-    `## Output Format`,
-    `1. **Title** (50-60 chars)`,
-    `2. **Meta Description** (150 chars)`, 
-    `3. **Summary** (2-3 sentences)`,
-    `4. **Article** with H2/H3 structure`,
+    `## Style & Tone`,
+    `- ${style.tone}.`,
+    `- ${style.structure}.`,
+    `- Include ${style.features}.`,
+    `- Write naturally and idiomatically in ${languageName}.`,
     '',
-    `Write a high-quality ${contentType.replace('_', ' ').toLowerCase()} about "${topic}" in ${languageName}.`
+    `## SEO Requirements`,
+    keywords.length > 0 ? `- Primary and secondary keywords: ${keywords.slice(0, 8).join(', ')}.` : `- Integrate natural, relevant keywords for ${categoryName}.`,
+    `- Title: compelling, within 50–60 chars; avoid clickbait.`,
+    `- Meta Description: persuasive, within 140–160 chars.`,
+    `- Use meaningful H2/H3 headings; include bullet lists where helpful.`,
+    `- Add a short FAQ (4–6 Q&A) covering long-tail queries.`,
+    '',
+    `## Recency & Sources`,
+    `- If web search is enabled:`,
+    `  - Use at least 3 credible, recent sources (prefer last 7–30 days; OK to include last 24–72 hours when relevant).`,
+    `  - Use inline citations like [1], [2] in the text.`,
+    `  - Add a final "Sources" section listing title, publisher, region, and URL for each citation.`,
+    `  - Ensure sources cover multiple regions (e.g., US, EU, Asia) and different publishers (avoid same-domain duplicates).`,
+    `- If web search is disabled: rely on established knowledge; do not fabricate sources.`,
+    '',
+    `## Structure`,
+    `1. # Title`,
+    `2. ## Meta Description`,
+    `3. ## Summary (2–3 sentences)`,
+    `4. ---`,
+    `5. ## Introduction (context + why it matters now; global angle)`,
+    `6. ## Global Trends Overview (what changed this week + key drivers)`,
+    `7. ## Regional Snapshots`,
+    `   - ### Americas (key updates + implications)`,
+    `   - ### EMEA (key updates + implications)`,
+    `   - ### APAC (key updates + implications)`,
+    `8. ## Deep Dives (3–5 sections) each with H3 subsections including:`,
+    `   - Practical steps or frameworks`,
+    `   - Concrete examples or mini case studies`,
+    `   - Recent data points or observations (with [n] if from web)`,
+    `9. ## Key Takeaways (3–6 bullets)`,
+    `10. ## FAQ (4–6 Q&A)`,
+    `11. ## Conclusion (actionable wrap-up)`,
+    `12. ## Sources (if web search used)`,
+    '',
+    `## Constraints`,
+    `- Ensure factual consistency with the date ${isoDate}.`,
+    `- Do not include placeholders like YYYY or outdated years.`,
+    `- Avoid fluff; keep paragraphs concise and scannable.`,
+    `- Avoid repeating generic content across runs; reflect the variation hint if present.`,
+    '',
+    `Produce the full article in ${languageName}.`
   ].filter(Boolean).join('\n');
   
   return prompt;
@@ -260,7 +221,8 @@ export async function generateArticleViaAPI({
   generateImage = false,  // معطل افتراضياً
   maxWords = 1500,        // مخفض من 2000
   complexity = 'medium',
-  monthlyTokensUsed = 0
+  monthlyTokensUsed = 0,
+  modelOverride = null
 }) {
   if (!config.ai.apiKey) {
     // Enhanced development fallback
@@ -304,11 +266,18 @@ Mastering ${topic} requires consistent effort and strategic approach. Follow the
   try {
 
     // اختيار موديل محسن اقتصادياً
-    const selectedModel = selectCostEfficientModel(languageCode, categorySlugLower, complexity, monthlyTokensUsed);
+    const selectedModel = modelOverride || selectCostEfficientModel(languageCode, categorySlugLower, complexity, monthlyTokensUsed);
     const model = mapProviderModelName(selectedModel);
     const prompt = buildOptimizedPrompt({ 
-      topic, languageCode, categoryName, contentType, 
-      targetAudience, keywords, maxWords 
+      topic,
+      languageCode,
+      categoryName,
+      contentType,
+      targetAudience,
+      keywords,
+      maxWords,
+      geoScope: 'global',
+      variationHint: `Run-ID ${Date.now()} | Emphasize unique angles and different examples from previous runs.`
     });
 
     // تقدير التوكنز قبل الإرسال
@@ -329,7 +298,7 @@ Mastering ${topic} requires consistent effort and strategic approach. Follow the
 
     // Build API request
     const requestPayload = {
-      type: 'CHAT_WITH_AI',
+      type: 'CONTENT_GENERATOR_BLOG_ARTICLE',
       model: model,
       promptObject: {
         prompt: prompt,
@@ -355,7 +324,7 @@ Mastering ${topic} requires consistent effort and strategic approach. Follow the
         params: {
           isStreaming: false
         },
-        timeout: 90_000  // مخفض من 120 ثانية إلى 90
+        timeout: 500_000  // مخفض من 120 ثانية إلى 90
       }
     );
 
