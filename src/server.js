@@ -11,8 +11,6 @@ import categoriesRoute from './routes/categories.js';
 import articlesRoute from './routes/articles.js';
 import { runGenerationBatch } from './services/generation.js';
 import { query } from './db.js';
-import swaggerUi from 'swagger-ui-express';
-import { swaggerSpec } from './swagger.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
@@ -21,40 +19,11 @@ app.use(express.json({ limit: '1mb' }));
 app.use(cors());
 app.use(helmet());
 
-// Swagger UI and spec
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-app.get('/openapi.json', (req, res) => res.json(swaggerSpec));
-
-/**
- * @openapi
- * /health:
- *   get:
- *     summary: Health check
- *     tags:
- *       - System
- *     responses:
- *       200:
- *         description: Service is healthy
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                 env:
- *                   type: string
- *                 timestamp:
- *                   type: string
- *       500:
- *         description: Service error
- */
 app.get('/health', async (req, res) => {
   try {
     await query('SELECT 1');
     res.json({ status: 'ok', env: config.env, timestamp: new Date().toISOString() });
   } catch (err) {
-    logger.warn({ err }, 'health check failed');
     res.status(500).json({ status: 'error' });
   }
 });
@@ -70,15 +39,10 @@ async function ensureDailyQuota() {
     );
     const generated = rows[0]?.num_articles_generated || 0;
     const target = rows[0]?.num_articles_target || config.generation.dailyTarget;
-    if (generated >= target) {
-      logger.info({ generated, target }, 'daily target already met, skipping generation');
-      return;
-    }
+    if (generated >= target) return;
   } catch (_) {
     // ignore, generation will upsert job row
-    logger.warn('failed to read generation job row; proceeding to attempt generation');
   }
-  logger.info('starting generation batch');
   const result = await runGenerationBatch();
   logger.info({ generated: result.generated }, 'generation batch done');
 }
