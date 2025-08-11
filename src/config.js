@@ -16,7 +16,7 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL,
   oneMinAI: {
     apiKey: process.env.ONE_MIN_AI_API_KEY || '',
-    baseUrl: process.env.ONE_MIN_AI_BASE_URL || 'https://api.1min.ai/v1',
+    baseUrl: process.env.ONE_MIN_AI_BASE_URL || 'https://api.1min.ai/api',
     defaultModel: process.env.AI_DEFAULT_TEXT_MODEL || 'gpt-4o-mini',
     fallbackModel: process.env.AI_FALLBACK_MODEL || 'mistral-nemo',
     premiumModel: process.env.AI_PREMIUM_MODEL || 'gpt-4o',

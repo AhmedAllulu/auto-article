@@ -1,11 +1,13 @@
 import crypto from 'crypto';
 import { query, withTransaction } from '../db.js';
+import pino from 'pino';
 import { config } from '../config.js';
 import { toSlug } from '../utils/slug.js';
 import { fetchUnsplashImageUrl } from './unsplash.js';
 import { generateArticleWithSearch, generateNoSearch } from './oneMinAI.js';
 
 const TOP_REVENUE_LANGUAGES = new Set(['en', 'de', 'fr', 'es', 'pt', 'ar']);
+const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
 function computeHash(text) {
   return crypto.createHash('sha256').update(text).digest('hex');
@@ -272,7 +274,10 @@ export async function runGenerationBatch() {
   if (remaining <= 0) return { generated: 0 };
 
   const categories = await getCategories();
-  if (!categories.length) return { generated: 0 };
+  if (!categories.length) {
+    logger.warn('no categories found; generation skipped');
+    return { generated: 0 };
+  }
 
   // Choose categories prioritizing top revenue ones from env
   const preferred = config.categoriesEnv;
@@ -294,6 +299,7 @@ export async function runGenerationBatch() {
       await withTransaction(async (client) => {
         // Insert master first
         const masterInserted = await insertArticle(client, masterArticle);
+        logger.info({ articleId: masterInserted.id, slug: masterInserted.slug }, 'inserted master article');
 
         // Insert translations prioritizing top languages
         const sortedTranslations = translations.sort((a, b) => {
@@ -310,12 +316,14 @@ export async function runGenerationBatch() {
         for (const t of sortedTranslations) {
           try {
             await insertArticle(client, t);
+            logger.info({ slug: t.slug, lang: t.language_code }, 'inserted translation');
             usages.push({
               prompt_tokens: t.ai_tokens_input,
               completion_tokens: t.ai_tokens_output,
             });
           } catch (e) {
             // Likely duplicate slug/hash, skip
+            logger.warn({ slug: t.slug, lang: t.language_code, err: e?.message }, 'failed to insert translation (likely duplicate)');
           }
         }
 
@@ -326,8 +334,8 @@ export async function runGenerationBatch() {
       generatedCount += 1 + translations.length;
       if (generatedCount >= remaining) break;
     } catch (err) {
-      // Continue to next category
-      // Optionally log errors; kept minimal here
+      // AI call or assembly failure
+      logger.error({ category: category.slug, err }, 'generation failed for category');
       continue;
     }
   }

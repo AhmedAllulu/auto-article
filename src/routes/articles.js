@@ -5,6 +5,44 @@ import { resolveLanguage } from '../utils/lang.js';
 
 const router = express.Router();
 
+/**
+ * @openapi
+ * /articles/{id}/related:
+ *   get:
+ *     summary: Get related articles for the given article id
+ *     tags:
+ *       - Articles
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *       - in: header
+ *         name: Accept-Language
+ *         required: false
+ *         description: Preferred language code, e.g., en, es
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: A list of related article summaries
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ArticleSummary'
+ *                 language:
+ *                   type: string
+ *       404:
+ *         description: Not found
+ *       500:
+ *         description: Failed to load related articles
+ */
 router.get('/:id/related', async (req, res) => {
   const language = resolveLanguage(req, config.languages);
   const id = req.params.id;
