@@ -4,28 +4,66 @@ import { config } from '../config.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
+function normalizeOneMinBaseUrl(inputUrl) {
+  if (!inputUrl || typeof inputUrl !== 'string') return 'https://api.1min.ai/api';
+  let url = inputUrl.trim();
+  // remove trailing slashes
+  url = url.replace(/\/+$/, '');
+  // drop trailing /v1 if present
+  url = url.replace(/\/v1$/, '');
+  // ensure it ends with /api
+  if (!/\/api$/.test(url)) url = url + '/api';
+  return url;
+}
+
 function buildHttpClient() {
   if (!config.oneMinAI.apiKey) {
     const message = 'ONE_MIN_AI_API_KEY is missing';
     logger.error(message);
     throw new Error(message);
   }
+  const configuredBase = config.oneMinAI.baseUrl;
+  const normalizedBase = normalizeOneMinBaseUrl(configuredBase);
+  if (normalizedBase !== configuredBase) {
+    logger.warn({ configuredBase, normalizedBase }, 'Normalized ONE_MIN_AI base URL');
+  }
   const headers = {
-    Authorization: `Bearer ${config.oneMinAI.apiKey}`,
-    'X-API-Key': config.oneMinAI.apiKey,
+    'API-KEY': config.oneMinAI.apiKey,
     'Content-Type': 'application/json',
+    Accept: 'application/json',
   };
   return axios.create({
-    baseURL: config.oneMinAI.baseUrl,
+    baseURL: normalizedBase,
     headers,
     timeout: 60000,
     validateStatus: () => true, // handle non-2xx explicitly
   });
 }
 
-function buildMessagesPrompt({ system, user }) {
-  // 1min.ai features endpoint expects a generic payload with type and promptObject
-  // We will map our chat messages into a single prompt string
+function buildContentGeneratorPayload({ system, user }) {
+  // Build payload for 1min.ai CONTENT_GENERATOR_BLOG_ARTICLE endpoint
+  const parts = [];
+  if (system) parts.push(`[System]\n${system}`);
+  if (user) parts.push(`[User]\n${user}`);
+  const prompt = parts.join('\n\n');
+  return {
+    type: 'CONTENT_GENERATOR_BLOG_ARTICLE',
+    conversationId: 'CONTENT_GENERATOR_BLOG_ARTICLE',
+    model: config.oneMinAI.defaultModel,
+    promptObject: {
+      language: 'English',
+      tone: 'informative',
+      numberOfWord: 900,
+      numberOfSection: 6,
+      keywords: '',
+      prompt,
+      ...(config.oneMinAI.enableWebSearch ? { web_search: true } : {}),
+    },
+  };
+}
+
+function buildChatPayload({ system, user }) {
+  // Generic chat payload
   const parts = [];
   if (system) parts.push(`[System]\n${system}`);
   if (user) parts.push(`[User]\n${user}`);
@@ -47,7 +85,7 @@ export async function generateArticleWithSearch(system, user) {
 
   let lastError;
   for (const model of models) {
-    const baseBody = buildMessagesPrompt({ system, user });
+    const baseBody = buildChatPayload({ system, user });
     baseBody.model = model;
     for (const endpoint of endpoints) {
       try {
@@ -90,8 +128,9 @@ export async function generateNoSearch(system, user) {
 
   let lastError;
   for (const model of models) {
-    const body = { ...buildMessagesPrompt({ system, user }) };
+    const body = { ...buildChatPayload({ system, user }) };
     body.model = model;
+    // ensure no web search for translation calls
     if (body?.promptObject?.web_search) delete body.promptObject.web_search;
     for (const endpoint of endpoints) {
       try {

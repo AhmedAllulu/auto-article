@@ -177,9 +177,19 @@ async function createMasterAndTranslations(category) {
   const ai = await generateArticleWithSearch(system, user);
   let masterJson;
   try {
-    masterJson = JSON.parse(ai.content);
+    masterJson = typeof ai.content === 'object' ? ai.content : JSON.parse(ai.content);
   } catch (e) {
-    throw new Error('AI did not return valid JSON for master article');
+    // Attempt to salvage JSON from within text responses
+    const match = String(ai.content || '').match(/\{[\s\S]*\}/);
+    if (match) {
+      try {
+        masterJson = JSON.parse(match[0]);
+      } catch (e2) {
+        throw new Error('AI did not return valid JSON for master article');
+      }
+    } else {
+      throw new Error('AI did not return valid JSON for master article');
+    }
   }
 
   const title = masterJson.title || `Insights in ${category.name}`;
