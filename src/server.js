@@ -45,9 +45,29 @@ app.use(helmet({
   }
 }));
 
+// Respect reverse proxies (X-Forwarded-For/Proto)
+app.set('trust proxy', 1);
+
+// CORS configuration (strict in production)
+const allowedOrigins = (() => {
+  if (config.isProd) {
+    const envOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+    return envOrigins.length > 0 ? envOrigins : ['https://chato-app.com', 'https://www.chato-app.com'];
+  }
+  return ['http://localhost:8080', 'http://127.0.0.1:8080'];
+})();
+
 app.use(cors({
-  origin: config.isProd ? process.env.ALLOWED_ORIGINS?.split(',') : '*',
-  credentials: true
+  origin(origin, callback) {
+    if (!origin) return callback(null, true); // allow non-browser tools
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Content-Length'],
+  credentials: true,
+  optionsSuccessStatus: 204
 }));
 
 app.use(express.json({ limit: '1mb' }));
