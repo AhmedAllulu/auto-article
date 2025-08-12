@@ -1,96 +1,83 @@
-import dotenv from 'dotenv';
-import { pool, query } from '../src/db/pool.js';
-import config from '../src/config/env.js';
-import logger from '../src/lib/logger.js';
+import { query } from '../src/db.js';
 
-dotenv.config();
+async function main() {
+  // Base tables
+  await query(`
+    CREATE TABLE IF NOT EXISTS categories (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL UNIQUE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+    );
+  `);
 
-const ddl = `
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+  await query(`
+    CREATE TABLE IF NOT EXISTS category_translations (
+      id SERIAL PRIMARY KEY,
+      category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+      language_code TEXT NOT NULL,
+      name TEXT NOT NULL,
+      UNIQUE(category_id, language_code)
+    );
+  `);
 
-CREATE TABLE IF NOT EXISTS categories (
-  id SERIAL PRIMARY KEY,
-  name TEXT NOT NULL,
-  slug TEXT NOT NULL UNIQUE
-);
+  await query(`
+    CREATE TABLE IF NOT EXISTS articles (
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL,
+      slug TEXT NOT NULL UNIQUE,
+      content TEXT NOT NULL,
+      summary TEXT,
+      language_code TEXT NOT NULL,
+      category_id INTEGER REFERENCES categories(id),
+      image_url TEXT,
+      meta_title TEXT,
+      meta_description TEXT,
+      canonical_url TEXT,
+      reading_time_minutes INTEGER,
+      ai_model TEXT,
+      ai_prompt TEXT,
+      ai_tokens_input INTEGER DEFAULT 0,
+      ai_tokens_output INTEGER DEFAULT 0,
+      total_tokens INTEGER DEFAULT 0,
+      source_url TEXT,
+      content_hash TEXT,
+      published_at TIMESTAMP WITH TIME ZONE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+    );
+  `);
 
-CREATE TABLE IF NOT EXISTS articles (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  title TEXT NOT NULL,
-  slug TEXT NOT NULL UNIQUE,
-  content TEXT NOT NULL,
-  summary TEXT,
-  language_code VARCHAR(5) NOT NULL,
-  category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
-  image_url TEXT,
-  meta_title TEXT,
-  meta_description TEXT,
-  canonical_url TEXT,
-  og_title TEXT,
-  og_description TEXT,
-  og_image TEXT,
-  twitter_title TEXT,
-  twitter_description TEXT,
-  twitter_image TEXT,
-  reading_time_minutes INTEGER,
-  source_url TEXT,
-  ai_model TEXT,
-  ai_prompt TEXT,
-  ai_tokens_input INTEGER DEFAULT 0,
-  ai_tokens_output INTEGER DEFAULT 0,
-  total_tokens INTEGER DEFAULT 0,
-  published_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+  await query(`
+    CREATE TABLE IF NOT EXISTS generation_jobs (
+      job_date DATE PRIMARY KEY,
+      num_articles_target INTEGER DEFAULT 0,
+      num_articles_generated INTEGER DEFAULT 0,
+      started_at TIMESTAMP WITH TIME ZONE,
+      finished_at TIMESTAMP WITH TIME ZONE
+    );
+  `);
 
-CREATE INDEX IF NOT EXISTS idx_articles_language ON articles(language_code);
-CREATE INDEX IF NOT EXISTS idx_articles_category ON articles(category_id);
-CREATE INDEX IF NOT EXISTS idx_articles_created ON articles(created_at DESC);
+  await query(`
+    CREATE TABLE IF NOT EXISTS token_usage (
+      day DATE PRIMARY KEY,
+      tokens_input BIGINT DEFAULT 0,
+      tokens_output BIGINT DEFAULT 0
+    );
+  `);
 
-CREATE TABLE IF NOT EXISTS token_usage (
-  day DATE PRIMARY KEY,
-  tokens_input INTEGER NOT NULL DEFAULT 0,
-  tokens_output INTEGER NOT NULL DEFAULT 0
-);
+  // Ensure today's generation job row exists
+  await query(
+    `INSERT INTO generation_jobs (job_date) VALUES (CURRENT_DATE)
+     ON CONFLICT (job_date) DO NOTHING`
+  );
 
-CREATE TABLE IF NOT EXISTS generation_jobs (
-  id SERIAL PRIMARY KEY,
-  job_date DATE NOT NULL UNIQUE,
-  status TEXT NOT NULL DEFAULT 'scheduled',
-  num_articles_target INTEGER NOT NULL DEFAULT 100,
-  num_articles_generated INTEGER NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  started_at TIMESTAMPTZ,
-  finished_at TIMESTAMPTZ,
-  error TEXT
-);
-`;
-
-async function seedCategories() {
-  const existing = await query('SELECT COUNT(1) AS cnt FROM categories', []);
-  if (Number(existing.rows[0].cnt) > 0) return;
-  const names = config.topCategories.map((s) => s.trim());
-  for (const name of names) {
-    await query('INSERT INTO categories (name, slug) VALUES ($1, $2) ON CONFLICT DO NOTHING', [
-      name.charAt(0).toUpperCase() + name.slice(1),
-      name,
-    ]);
-  }
+  console.log('Migration completed.');
+  process.exit(0);
 }
 
-async function run() {
-  try {
-    await query(ddl);
-    await seedCategories();
-    logger.info('Migration completed');
-  } catch (err) {
-    logger.error({ err }, 'Migration failed');
-  } finally {
-    await pool.end();
-  }
-}
-
-run();
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
 
 

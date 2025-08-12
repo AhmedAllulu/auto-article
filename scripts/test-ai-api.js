@@ -1,71 +1,56 @@
-// Simple script to test 1min.ai credentials and endpoint directly
-import axios from 'axios';
-import dotenv from 'dotenv';
-dotenv.config();
-
-const baseUrl = (process.env.ONE_MIN_AI_BASE_URL || 'https://api.1min.ai').replace(/\/$/, '');
-const apiKey = process.env.ONE_MIN_AI_API_KEY || '';
+#!/usr/bin/env node
+import { Command } from 'commander';
+import { generateNoSearch, generateArticleWithSearch } from '../src/services/oneMinAI.js';
 
 async function main() {
-  const payload = {
-    type: 'CHAT_WITH_AI',
-    model: 'gpt-4o-mini',
-    promptObject: {
-      prompt: 'Say hello in one short sentence.',
-      isMixed: false,
-      imageList: [],
-      webSearch: false,
-      numOfSite: 0,
-      maxWord: 100,
-      temperature: 0.2,
-      language: 'en'
-    }
-  };
+  const program = new Command();
+  program
+    .name('test-ai-api')
+    .description('Test 1min.ai API with the correct configuration')
+    .option('-p, --prompt <text>', 'User prompt text', 'Say hello world in one sentence.')
+    .option('-s, --system <text>', 'System instruction', 'You are a helpful assistant.')
+    .option('--search', 'Enable web search', false)
+    .option('--raw', 'Print raw response object', false)
+    .parse(process.argv);
 
-  const url = `${baseUrl}/api/features`;
-  console.log('Testing 1min.ai…');
-  console.log('Base URL:', baseUrl);
-  console.log('API key present:', apiKey ? 'yes' : 'no');
+  const opts = program.opts();
 
+  console.log('🧪 Testing 1min.ai API...');
+  console.log(`📝 System: ${opts.system}`);
+  console.log(`👤 User: ${opts.prompt}`);
+  console.log(`🔍 Web Search: ${opts.search ? 'enabled' : 'disabled'}`);
+  console.log('');
+
+  const start = Date.now();
   try {
-    const res = await axios.post(url, payload, {
-      headers: {
-        'Content-Type': 'application/json',
-        'API-KEY': apiKey
-      },
-      params: { isStreaming: false },
-      timeout: 30000
-    });
-    const data = res.data || {};
-    console.log('Status:', res.status);
-    console.log('Keys:', Object.keys(data));
-    const aiRecord = data.aiRecord || {};
-    const possibleText = aiRecord.content || aiRecord.text || aiRecord.message || aiRecord.output || data.text || data.content || '';
-    console.log('aiRecord keys:', Object.keys(aiRecord));
-    console.log('Text sample:', String(possibleText).slice(0, 500));
-    // Raw JSON preview (truncated)
-    try {
-      console.log('Raw JSON preview:', JSON.stringify(data).slice(0, 2000));
-    } catch (_) {
-      // ignore
+    const result = opts.search 
+      ? await generateArticleWithSearch(opts.system, opts.prompt)
+      : await generateNoSearch(opts.system, opts.prompt);
+    
+    const elapsed = Date.now() - start;
+    
+    if (opts.raw) {
+      console.log('📄 Raw Response:', JSON.stringify(result, null, 2));
+    } else {
+      console.log('✅ SUCCESS!');
+      console.log(`⏱️  Time: ${elapsed}ms`);
+      console.log(`🤖 Model: ${result.model}`);
+      console.log(`📊 Usage: ${JSON.stringify(result.usage)}`);
+      console.log('');
+      console.log('💬 Response:');
+      console.log('-'.repeat(40));
+      console.log(result.content);
+      console.log('-'.repeat(40));
     }
-    process.exit(0);
-  } catch (err) {
-    const status = err.response?.status;
-    const body = err.response?.data;
-    console.error('Request failed');
-    console.error('Status:', status);
-    console.error('Message:', err.message);
-    if (body) {
-      console.error('Response body (truncated):', JSON.stringify(body).slice(0, 300));
-    }
-    if (!apiKey) {
-      console.error('Missing ONE_MIN_AI_API_KEY environment variable.');
+  } catch (error) {
+    const elapsed = Date.now() - start;
+    console.error(`❌ FAILED after ${elapsed}ms:`);
+    console.error(error.message);
+    if (error.response?.data) {
+      console.error('Response data:', JSON.stringify(error.response.data, null, 2));
     }
     process.exit(1);
   }
 }
 
 main();
-
-
