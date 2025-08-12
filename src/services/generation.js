@@ -5,20 +5,55 @@ import { toSlug } from '../utils/slug.js';
 import { fetchUnsplashImageUrl } from './unsplash.js';
 import { generateArticleWithSearch, generateNoSearch } from './oneMinAI.js';
 
+// Debug logging for generation flow (enable with DEBUG_GENERATION=true)
+const DEBUG_GENERATION = String(process.env.DEBUG_GENERATION || 'false') === 'true';
+function genLog(...args) {
+  if (DEBUG_GENERATION) console.log('[generation]', ...args);
+}
+
 const TOP_REVENUE_LANGUAGES = new Set(['en', 'de', 'fr', 'es', 'pt', 'ar']);
+
+function computePriorityScore({ categorySlug, languageCode, countryCode }) {
+  const lw = Number(config.priorities.languages[languageCode] || 0);
+  const cw = Number(config.priorities.countries[countryCode || 'US'] || 0); // default to US if not provided
+  const kw = Number(config.priorities.categories[categorySlug] || 0);
+  // Weighted geometric-like mean to avoid any zero nullifying everything, add small epsilon
+  const epsilon = 0.001;
+  const score = (lw + epsilon) * (cw + epsilon) * (kw + epsilon);
+  return score;
+}
+
+function bestMarketForLanguage(languageCode) {
+  const markets = config.priorities.languageMarkets[languageCode] || [];
+  if (!markets.length) return 'US';
+  // Choose market with highest country weight
+  let best = markets[0];
+  let bestW = Number(config.priorities.countries[best] || 0);
+  for (const c of markets) {
+    const w = Number(config.priorities.countries[c] || 0);
+    if (w > bestW) {
+      best = c;
+      bestW = w;
+    }
+  }
+  return best;
+}
 
 function computeHash(text) {
   return crypto.createHash('sha256').update(text).digest('hex');
 }
 
 function buildMasterPrompt(categoryName) {
-  const system = `You are an expert SEO content strategist and writer. Write high-quality, deeply informative, fact-checked articles with schema-friendly structure.`;
+  const system = `You are an expert SEO content strategist and writer. Write high-quality, deeply informative, fact-checked articles with schema-friendly structure.
+
+Important output rule: Respond ONLY with raw JSON matching the requested schema. Do not include any explanation, markdown, or code fences.`;
   const user = `Task: Research trending topics in the category "${categoryName}" and create ONE full SEO-optimized master article.
 
 Requirements:
 - Catchy SEO title (H1)
-- Intro paragraph (60-100 words)
+- Intro paragraph (at least 120-180 words)
 - Structured subheadings (H2/H3)
+- Each section body should be substantial (200-300+ words) with rich details and examples
 - Keyword optimization for high-intent queries
 - FAQ section (5 Q&A)
 - Natural internal linking suggestions (anchor text + suggested slug)
@@ -26,22 +61,58 @@ Requirements:
 - Include tags/keywords list
 - Keep tone authoritative, clear, and helpful.
 
-Output JSON with fields: title, metaTitle, metaDescription, intro, sections (array of {heading, body}), faq (array of {q, a}), keywords (array of strings), internalLinks (array of {anchor, slugSuggestion}), summary (1-2 sentences), sourceUrls (array), category: "${categoryName}".`;
+Output strictly JSON with fields: title, metaTitle, metaDescription, intro, sections (array of {heading, body}), faq (array of {q, a}), keywords (array of strings), internalLinks (array of {anchor, slugSuggestion}), summary (2-3 sentences), sourceUrls (array), category: "${categoryName}".`;
   return { system, user };
 }
 
 function buildTranslationPrompt(targetLang, masterJson) {
-  const system = `You are a professional translator specialized in SEO. Preserve SEO terms, structure, formatting, and intent.`;
+  const system = `You are a professional translator specialized in SEO. Preserve SEO terms, structure, formatting, and intent.
+
+Important output rule: Respond ONLY with raw JSON matching the requested schema. Do not include any explanation, markdown, or code fences.`;
   const user = `Translate the following article JSON into language: ${targetLang}.
 - Preserve structure and headings
 - Keep SEO key terms intact where they are brand or global
 - Maintain the FAQ and internal links (translate anchor, keep slugSuggestion ascii-lowercase with dashes)
-Return the same JSON structure fields.
+Return the same JSON structure fields. Output strictly valid JSON only.
 
 CONTENT:
 ${JSON.stringify(masterJson)}`;
   return { system, user };
 }
+// Try to parse JSON from imperfect AI responses by extracting code-fenced or first balanced JSON object
+function parseJsonFromContent(content) {
+  if (!content || typeof content !== 'string') return null;
+  // 1) Code fence extraction
+  const fenceMatch = content.match(/```json[\s\S]*?```/i) || content.match(/```[\s\S]*?```/);
+  if (fenceMatch) {
+    const inner = fenceMatch[0].replace(/^```json/i, '```').slice(3, -3); // strip ```json ... ```
+    try {
+      return JSON.parse(inner);
+    } catch {}
+  }
+  // 2) Balanced brace extraction (first largest JSON object)
+  const firstBrace = content.indexOf('{');
+  const lastBrace = content.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    const candidate = content.slice(firstBrace, lastBrace + 1);
+    // Attempt progressive trimming if trailing text sneaks inside
+    for (let i = candidate.length; i >= 2; i--) {
+      const slice = candidate.slice(0, i);
+      try {
+        return JSON.parse(slice);
+      } catch {}
+    }
+  }
+  // 3) Smart quotes normalization then retry direct parse
+  const normalized = content
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'");
+  try {
+    return JSON.parse(normalized);
+  } catch {}
+  return null;
+}
+
 
 async function upsertTodayJob(target) {
   const res = await query(
@@ -172,11 +243,13 @@ function assembleHtml(master) {
 
 async function createMasterAndTranslations(category) {
   const { system, user } = buildMasterPrompt(category.name);
+  genLog('AI master start', { category: category.slug });
+  const tMasterStart = Date.now();
   const ai = await generateArticleWithSearch(system, user);
-  let masterJson;
-  try {
-    masterJson = JSON.parse(ai.content);
-  } catch (e) {
+  genLog('AI master done', { category: category.slug, ms: Date.now() - tMasterStart });
+  let masterJson = parseJsonFromContent(ai.content);
+  if (!masterJson) {
+    if (DEBUG_GENERATION) genLog('Master JSON parse failed. Content preview:', String(ai.content).slice(0, 400));
     throw new Error('AI did not return valid JSON for master article');
   }
 
@@ -189,7 +262,9 @@ async function createMasterAndTranslations(category) {
   const canonicalUrl = config.seo.canonicalBaseUrl
     ? `${config.seo.canonicalBaseUrl}/${slugBase}`
     : null;
+  const tImgStart = Date.now();
   const imageUrl = await fetchUnsplashImageUrl(title);
+  genLog('Unsplash fetched', { category: category.slug, ms: Date.now() - tImgStart, hasImage: Boolean(imageUrl) });
   const readingTime = estimateReadingTimeMinutes(contentHtml);
   const contentHash = computeHash(contentHtml + title);
 
@@ -218,12 +293,13 @@ async function createMasterAndTranslations(category) {
   for (const lang of config.languages) {
     if (lang === 'en') continue;
     const { system: ts, user: tu } = buildTranslationPrompt(lang, masterJson);
+    genLog('AI translation start', { category: category.slug, lang });
+    const tTransStart = Date.now();
     const aiT = await generateNoSearch(ts, tu);
-    let tJson;
-    try {
-      tJson = JSON.parse(aiT.content);
-    } catch (e) {
-      // Skip invalid translation, continue
+    genLog('AI translation done', { category: category.slug, lang, ms: Date.now() - tTransStart });
+    let tJson = parseJsonFromContent(aiT.content);
+    if (!tJson) {
+      genLog('Translation JSON parse failed, skipping', { category: category.slug, lang });
       continue;
     }
     const tTitle = tJson.title || title;
@@ -263,44 +339,65 @@ async function createMasterAndTranslations(category) {
 }
 
 export async function runGenerationBatch() {
+  genLog('Batch start');
   const todayJob = await upsertTodayJob(config.generation.dailyTarget);
   const remaining = Math.max(
     0,
     (todayJob?.num_articles_target || config.generation.dailyTarget) -
       (todayJob?.num_articles_generated || 0)
   );
-  if (remaining <= 0) return { generated: 0 };
+  genLog('Remaining to generate today', { remaining });
+  if (remaining <= 0) {
+    genLog('Nothing remaining for today');
+    return { generated: 0 };
+  }
 
+  genLog('Fetching categories');
   const categories = await getCategories();
-  if (!categories.length) return { generated: 0 };
+  genLog('Categories fetched', { count: categories.length });
+  if (!categories.length) {
+    genLog('No categories found');
+    return { generated: 0 };
+  }
 
-  // Choose categories prioritizing top revenue ones from env
-  const preferred = config.categoriesEnv;
-  const orderedCategories = [
-    ...categories.filter((c) => preferred.includes(c.slug)),
-    ...categories.filter((c) => !preferred.includes(c.slug)),
-  ];
+  // Score categories using category weights (language and country agnostic here)
+  const orderedCategories = [...categories].sort((a, b) => {
+    const as = Number(config.priorities.categories[a.slug] || 0);
+    const bs = Number(config.priorities.categories[b.slug] || 0);
+    return bs - as;
+  });
 
   let generatedCount = 0;
 
+  let mastersGenerated = 0;
   for (const category of orderedCategories) {
     if (generatedCount >= config.generation.maxBatchPerRun) break;
+    if (mastersGenerated >= config.generation.maxMastersPerRun) break;
 
     try {
+      genLog('Processing category', { slug: category.slug });
       const { masterArticle, translations } = await createMasterAndTranslations(
         category
       );
 
       await withTransaction(async (client) => {
+        genLog('Inserting master article', { slug: masterArticle.slug });
         // Insert master first
         const masterInserted = await insertArticle(client, masterArticle);
 
-        // Insert translations prioritizing top languages
-        const sortedTranslations = translations.sort((a, b) => {
-          const aTop = TOP_REVENUE_LANGUAGES.has(a.language_code) ? 0 : 1;
-          const bTop = TOP_REVENUE_LANGUAGES.has(b.language_code) ? 0 : 1;
-          return aTop - bTop;
-        });
+        // Score translations by language priority; take top N by config
+        const sortedTranslations = translations
+          .map((t) => ({
+            item: t,
+            score: computePriorityScore({
+              categorySlug: category.slug,
+              languageCode: t.language_code,
+              countryCode: bestMarketForLanguage(t.language_code),
+            }),
+          }))
+          .sort((a, b) => b.score - a.score)
+          .slice(0, Math.max(0, config.generation.maxTranslationsPerMaster))
+          .map((x) => x.item);
 
         const usages = [{
           prompt_tokens: masterArticle.ai_tokens_input,
@@ -309,6 +406,7 @@ export async function runGenerationBatch() {
 
         for (const t of sortedTranslations) {
           try {
+            genLog('Inserting translation', { slug: t.slug, lang: t.language_code });
             await insertArticle(client, t);
             usages.push({
               prompt_tokens: t.ai_tokens_input,
@@ -323,15 +421,19 @@ export async function runGenerationBatch() {
         await incrementJobCount(client, 1 + sortedTranslations.length);
       });
 
-      generatedCount += 1 + translations.length;
+      mastersGenerated += 1;
+      generatedCount += 1 + sortedTranslations.length;
+      genLog('Category done', { slug: category.slug, added: 1 + translations.length, total: generatedCount });
       if (generatedCount >= remaining) break;
     } catch (err) {
       // Continue to next category
       // Optionally log errors; kept minimal here
+      genLog('Category failed', { slug: category.slug, error: String(err?.message || err) });
       continue;
     }
   }
 
+  genLog('Batch done', { generatedCount });
   return { generated: generatedCount };
 }
 

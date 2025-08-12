@@ -9,6 +9,7 @@
     "build": "echo 'Build completed - ready for PM2 deployment'",
     "migrate": "node scripts/migrate.js",
     "seed": "node scripts/seed-categories.js",
+    "seed:category-translations": "node scripts/seed-category-translations.js",
     "import:csv": "node scripts/import-articles-from-csv.js /var/www/html/auto-article/Articles.csv",
     "format": "prettier --write \"src/**/*.js\" \"scripts/**/*.js\"",
     "test:ai": "node scripts/test-ai-api.js",

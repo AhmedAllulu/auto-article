@@ -5,12 +5,14 @@ import helmet from 'helmet';
 import cors from 'cors';
 import cron from 'node-cron';
 import pino from 'pino';
+import swaggerUi from 'swagger-ui-express';
 
 import { config, isProduction } from './config.js';
 import categoriesRoute from './routes/categories.js';
 import articlesRoute from './routes/articles.js';
 import { runGenerationBatch } from './services/generation.js';
 import { query } from './db.js';
+import { openapiSpecification } from './docs/swagger.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
@@ -19,6 +21,26 @@ app.use(express.json({ limit: '1mb' }));
 app.use(cors());
 app.use(helmet());
 
+/**
+ * @openapi
+ * /health:
+ *   get:
+ *     tags: [Health]
+ *     summary: Health check
+ *     responses:
+ *       '200':
+ *         description: Service is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HealthResponse'
+ *       '500':
+ *         description: Service error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
 app.get('/health', async (req, res) => {
   try {
     await query('SELECT 1');
@@ -30,6 +52,13 @@ app.get('/health', async (req, res) => {
 
 app.use('/categories', categoriesRoute);
 app.use('/articles', articlesRoute);
+
+// OpenAPI/Swagger endpoints
+app.get('/openapi.json', (_req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(openapiSpecification);
+});
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(openapiSpecification));
 
 // Scheduler: continue generating until daily target is met
 async function ensureDailyQuota() {
@@ -47,12 +76,16 @@ async function ensureDailyQuota() {
   logger.info({ generated: result.generated }, 'generation batch done');
 }
 
-cron.schedule(config.generation.cronSchedule, () => {
-  ensureDailyQuota().catch((e) => logger.warn({ err: e }, 'generation failed'));
-});
+if (config.generation.enabled) {
+  cron.schedule(config.generation.cronSchedule, () => {
+    ensureDailyQuota().catch((e) => logger.warn({ err: e }, 'generation failed'));
+  });
+}
 
 // Kick off on server start
-ensureDailyQuota().catch(() => {});
+if (config.generation.enabled) {
+  ensureDailyQuota().catch(() => {});
+}
 
 function startServer() {
   if (isProduction && config.https.certPath && config.https.keyPath) {

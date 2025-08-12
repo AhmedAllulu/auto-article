@@ -4,7 +4,7 @@ import { config } from '../config.js';
 const http = axios.create({
   baseURL: config.oneMinAI.baseUrl,
   headers: {
-    'API-KEY': config.oneMinAI.apiKey,  // Changed from Authorization Bearer
+    'API-KEY': config.oneMinAI.apiKey,
     'Content-Type': 'application/json',
   },
   timeout: 60000,
@@ -20,37 +20,52 @@ function combinePrompts(system, user) {
 
 function buildRequestBody({ system, user, enableWebSearch = false }) {
   return {
-    type: "CHAT_WITH_AI",  // Required by 1min.ai
+    type: "CHAT_WITH_AI",
     model: config.oneMinAI.defaultModel,
     promptObject: {
       prompt: combinePrompts(system, user),
-      ...(enableWebSearch ? { 
-        webSearch: true,
-        numOfSite: 1,
-        maxWord: 500 
-      } : {}),
+      ...(enableWebSearch
+        ? {
+            webSearch: true,
+            numOfSite: config.oneMinAI.webSearchNumSites,
+            maxWord: config.oneMinAI.webSearchMaxWords,
+          }
+        : {}),
     },
   };
 }
 
+async function makeApiCall(requestBody) {
+  const { data } = await http.post('/api/features', requestBody);
+  
+  // Extract content from 1min.ai response format
+  const aiRecord = data?.aiRecord;
+  if (!aiRecord || aiRecord.status !== 'SUCCESS') {
+    throw new Error(`API call failed: ${aiRecord?.status || 'Unknown error'}`);
+  }
+  
+  // Get the AI response from resultObject array
+  const resultObject = aiRecord.aiRecordDetail?.resultObject;
+  const content = Array.isArray(resultObject) ? resultObject.join('\n') : (resultObject || '');
+  
+  // Extract usage information (if available)
+  const usage = {
+    prompt_tokens: aiRecord.aiRecordDetail?.promptTokens || 0,
+    completion_tokens: aiRecord.aiRecordDetail?.completionTokens || 0,
+    total_tokens: aiRecord.aiRecordDetail?.totalTokens || 0
+  };
+  
+  const model = aiRecord.model || requestBody.model;
+  
+  return { content, usage, model };
+}
+
 export async function generateArticleWithSearch(system, user) {
   const body = buildRequestBody({ system, user, enableWebSearch: true });
-  // Prefer '/features'; if baseUrl already includes '/v1', this becomes '/v1/features'
-  const { data } = await http.post('/features', body);
-  
-  // Response format may be different - need to verify actual response structure
-  const content = data?.response?.text || data?.content || data?.result || '';
-  const usage = data?.usage || {};
-  return { content, usage, model: data?.model || body.model };
+  return await makeApiCall(body);
 }
 
 export async function generateNoSearch(system, user) {
   const body = buildRequestBody({ system, user, enableWebSearch: false });
-  // Prefer '/features'; if baseUrl already includes '/v1', this becomes '/v1/features'
-  const { data } = await http.post('/features', body);
-  
-  // Response format may be different - need to verify actual response structure
-  const content = data?.response?.text || data?.content || data?.result || '';
-  const usage = data?.usage || {};
-  return { content, usage, model: data?.model || body.model };
+  return await makeApiCall(body);
 }
