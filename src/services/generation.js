@@ -481,6 +481,50 @@ async function upsertTodayJob(target) {
   return res.rows[0];
 }
 
+async function getTodaysMastersCount() {
+  const res = await query(
+    `SELECT COUNT(*)::int AS count
+     FROM articles
+     WHERE language_code = 'en' AND published_at::date = CURRENT_DATE`
+  );
+  return res.rows[0]?.count || 0;
+}
+
+async function getMastersFromToday() {
+  const res = await query(
+    `SELECT a.id,
+            a.slug,
+            a.title,
+            a.summary,
+            a.image_url,
+            a.category_id,
+            c.slug AS category_slug,
+            c.name AS category_name
+     FROM articles a
+     LEFT JOIN categories c ON c.id = a.category_id
+     WHERE a.language_code = 'en' AND a.published_at::date = CURRENT_DATE
+     ORDER BY a.id ASC`
+  );
+  return res.rows.map((r) => ({
+    id: r.id,
+    slug: r.slug,
+    title: r.title,
+    summary: r.summary,
+    image_url: r.image_url,
+    category: { id: r.category_id, slug: r.category_slug, name: r.category_name },
+  }));
+}
+
+async function getExistingTranslationLanguagesForMaster(slugBase) {
+  const res = await query(
+    `SELECT language_code FROM articles WHERE slug LIKE $1 || '-%'`,
+    [slugBase]
+  );
+  const set = new Set();
+  for (const row of res.rows) set.add(row.language_code);
+  return set;
+}
+
 async function incrementJobCount(client, inc) {
   await client.query(
     `UPDATE generation_jobs SET num_articles_generated = num_articles_generated + $1,
@@ -838,10 +882,17 @@ async function generateTranslationArticle({ lang, category, masterJson, slugBase
 
 export async function runGenerationBatch() {
   genLog('Batch start');
-  const todayJob = await upsertTodayJob(config.generation.dailyTarget);
+  const mastersPerDay = Math.max(0, Number(config.generation.maxMastersPerDay || 0));
+  const translationsPerMaster = Math.max(0, Number(config.generation.maxTranslationsPerMaster || 0));
+  const availableNonEnglish = Math.max(0, (config.languages || []).filter((l) => l !== 'en').length);
+  const effectiveTranslationsPerMaster = Math.min(translationsPerMaster, availableNonEnglish);
+  const derivedDailyTarget = mastersPerDay > 0
+    ? mastersPerDay * (1 + effectiveTranslationsPerMaster)
+    : config.generation.dailyTarget;
+  const todayJob = await upsertTodayJob(derivedDailyTarget);
   const remaining = Math.max(
     0,
-    (todayJob?.num_articles_target || config.generation.dailyTarget) -
+    (todayJob?.num_articles_target || derivedDailyTarget) -
       (todayJob?.num_articles_generated || 0)
   );
   genLog('Remaining to generate today', { remaining });
@@ -871,9 +922,15 @@ export async function runGenerationBatch() {
   genLog('Masters phase start');
   const mastersPrepared = [];
   let mastersGenerated = 0;
+  const mastersAlreadyToday = await getTodaysMastersCount();
+  const mastersRemainingToday = Math.max(0, mastersPerDay - mastersAlreadyToday);
+  if (mastersRemainingToday <= 0) {
+    genLog('Master cap reached for today', { mastersAlreadyToday, mastersPerDay });
+  }
   for (const category of orderedCategories) {
     if (generatedCount >= config.generation.maxBatchPerRun) break;
     if (mastersGenerated >= config.generation.maxMastersPerRun) break;
+    if (mastersGenerated >= mastersRemainingToday) break;
     if (generatedCount >= remaining) break;
 
     try {
@@ -902,7 +959,7 @@ export async function runGenerationBatch() {
     }
   }
 
-  // Phase 2: Generate and insert translations for prepared masters
+  // Phase 2: Generate and insert translations for prepared masters (insert immediately per translation)
   genLog('Translations phase start', { masters: mastersPrepared.length });
   for (const item of mastersPrepared) {
     if (generatedCount >= config.generation.maxBatchPerRun) break;
@@ -910,13 +967,11 @@ export async function runGenerationBatch() {
 
     const { category, masterArticle, masterJson } = item;
 
-    // If we only have a fallback master (no structured JSON), skip translations
     if (!masterJson) {
       genLog('Skipping translations for fallback master', { slug: masterArticle.slug });
       continue;
     }
 
-    // Determine translation language order and cap per master
     const candidateLangs = (config.languages || []).filter((l) => l !== 'en');
     const orderedLangs = candidateLangs
       .map((languageCode) => ({
@@ -931,10 +986,9 @@ export async function runGenerationBatch() {
       .slice(0, Math.max(0, config.generation.maxTranslationsPerMaster))
       .map((x) => x.languageCode);
 
-    const preparedTranslations = [];
     for (const lang of orderedLangs) {
-      if (generatedCount + preparedTranslations.length >= config.generation.maxBatchPerRun) break;
-      if (generatedCount + preparedTranslations.length >= remaining) break;
+      if (generatedCount >= config.generation.maxBatchPerRun) break;
+      if (generatedCount >= remaining) break;
       try {
         const tArticle = await generateTranslationArticle({
           lang,
@@ -945,41 +999,106 @@ export async function runGenerationBatch() {
           summary: masterArticle.summary,
           imageUrl: masterArticle.image_url,
         });
-        if (tArticle) preparedTranslations.push(tArticle);
+        if (!tArticle) continue;
+
+        await withTransaction(async (client) => {
+          genLog('Inserting translation', { slug: tArticle.slug, lang: tArticle.language_code });
+          await insertArticle(client, tArticle);
+          await updateDailyTokenUsage(client, [{
+            prompt_tokens: tArticle.ai_tokens_input,
+            completion_tokens: tArticle.ai_tokens_output,
+          }]);
+          await incrementJobCount(client, 1);
+        });
+        generatedCount += 1;
+        genLog('Translation inserted', { slug: tArticle.slug, total: generatedCount });
       } catch (e) {
-        genLog('Translation generation failed, skipping', { slug: category.slug, lang, error: String(e?.message || e) });
+        genLog('Translation failed to insert', { slug: masterArticle.slug, lang, error: String(e?.message || e) });
         continue;
       }
     }
+  }
 
-    if (preparedTranslations.length === 0) continue;
+  // Phase 2b: If master cap prevented preparing masters in this run, translate existing today's masters (insert immediately per translation)
+  if (generatedCount < remaining) {
+    const todaysMasters = await getMastersFromToday();
+    genLog('Continuing translations for existing masters', { count: todaysMasters.length });
+    for (const m of todaysMasters) {
+      if (generatedCount >= config.generation.maxBatchPerRun) break;
+      if (generatedCount >= remaining) break;
 
-    try {
-      await withTransaction(async (client) => {
-        const usages = [];
-        let inserted = 0;
-        for (const t of preparedTranslations) {
-          try {
-            genLog('Inserting translation', { slug: t.slug, lang: t.language_code });
-            await insertArticle(client, t);
-            usages.push({
-              prompt_tokens: t.ai_tokens_input,
-              completion_tokens: t.ai_tokens_output,
-            });
-            inserted += 1;
-          } catch (e) {
-            // Likely duplicate slug/hash, skip insert
-            continue;
-          }
+      const category = m.category;
+      const masterArticle = { slug: m.slug, title: m.title, summary: m.summary, image_url: m.image_url };
+
+      // Without structured JSON we cannot build good translations; skip if not available
+      // Attempt to rebuild minimal masterJson by extracting from existing HTML is non-trivial; require skipping
+      // However, earlier in this run, createMasterArticle produced masterJson. For existing DB masters we don't have it.
+      // To support translations, we will fetch the master content and try to extract a pseudo-JSON using extractFromNaturalText
+      const contentRes = await query(`SELECT content FROM articles WHERE slug = $1 LIMIT 1`, [m.slug]);
+      const masterContent = contentRes.rows[0]?.content || '';
+      const extracted = extractFromNaturalText(masterContent, category?.name || '');
+      const masterJson = {
+        title: extracted.title || m.title,
+        metaTitle: extracted.title || m.title,
+        metaDescription: extracted.metaDescription || m.summary || '',
+        intro: extracted.intro || '',
+        sections: extracted.sections || [],
+        faq: extracted.faq || [],
+        keywords: extracted.keywords || [],
+        internalLinks: extracted.internalLinks || [],
+        summary: extracted.summary || m.summary || '',
+        sourceUrls: [],
+        category: category?.name || ''
+      };
+
+      const candidateLangs = (config.languages || []).filter((l) => l !== 'en');
+      const existingLangs = await getExistingTranslationLanguagesForMaster(masterArticle.slug);
+
+      const orderedLangs = candidateLangs
+        .filter((languageCode) => !existingLangs.has(languageCode))
+        .map((languageCode) => ({
+          languageCode,
+          score: computePriorityScore({
+            categorySlug: category?.slug,
+            languageCode,
+            countryCode: bestMarketForLanguage(languageCode),
+          }),
+        }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, Math.max(0, config.generation.maxTranslationsPerMaster))
+        .map((x) => x.languageCode);
+
+      for (const lang of orderedLangs) {
+        if (generatedCount >= config.generation.maxBatchPerRun) break;
+        if (generatedCount >= remaining) break;
+        try {
+          const tArticle = await generateTranslationArticle({
+            lang,
+            category,
+            masterJson,
+            slugBase: masterArticle.slug,
+            title: masterArticle.title,
+            summary: masterArticle.summary,
+            imageUrl: masterArticle.image_url,
+          });
+          if (!tArticle) continue;
+
+          await withTransaction(async (client) => {
+            genLog('Inserting translation', { slug: tArticle.slug, lang: tArticle.language_code });
+            await insertArticle(client, tArticle);
+            await updateDailyTokenUsage(client, [{
+              prompt_tokens: tArticle.ai_tokens_input,
+              completion_tokens: tArticle.ai_tokens_output,
+            }]);
+            await incrementJobCount(client, 1);
+          });
+          generatedCount += 1;
+          genLog('Translation inserted', { slug: tArticle.slug, total: generatedCount });
+        } catch (e) {
+          genLog('Translation generation or insert failed, skipping', { slug: category?.slug, lang, error: String(e?.message || e) });
+          continue;
         }
-        if (usages.length) await updateDailyTokenUsage(client, usages);
-        if (inserted) await incrementJobCount(client, inserted);
-        generatedCount += inserted;
-      });
-    } catch (e) {
-      // Even if the transaction fails, continue to next master
-      genLog('Translations phase failed for master', { slug: masterArticle.slug, error: String(e?.message || e) });
-      continue;
+      }
     }
   }
 

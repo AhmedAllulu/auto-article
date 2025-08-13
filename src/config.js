@@ -60,8 +60,9 @@ export const config = {
     dailyTarget: Number(process.env.DAILY_ARTICLE_TARGET || 100),
     maxBatchPerRun: Number(process.env.MAX_BATCH_PER_RUN || 6),
     cronSchedule: process.env.CRON_SCHEDULE || '*/15 * * * *',
-    maxTranslationsPerMaster: Number(process.env.MAX_TRANSLATIONS_PER_MASTER || 5),
+    maxTranslationsPerMaster: Number(process.env.MAX_TRANSLATIONS_PER_MASTER || 7),
     maxMastersPerRun: Number(process.env.MAX_MASTERS_PER_RUN || 14),
+    maxMastersPerDay: Number(process.env.MAX_MASTER_DAILY || 10),
   },
   seo: {
     canonicalBaseUrl: process.env.CANONICAL_BASE_URL || '',
