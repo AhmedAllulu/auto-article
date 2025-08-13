@@ -288,7 +288,14 @@ function extractFromNaturalText(content, categoryName) {
   }
 
   if (!result.summary) {
-    result.summary = `This guide provides comprehensive insights into ${categoryName}, covering best practices and practical strategies.`;
+    const introPreview = String(result.intro || '')
+      .split(/(?<=[.!?])\s+/)
+      .slice(0, 2)
+      .join(' ')
+      .trim();
+    result.summary = String(result.metaDescription || introPreview || '')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   if (result.keywords.length === 0) {

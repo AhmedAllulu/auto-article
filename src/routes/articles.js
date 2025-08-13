@@ -48,6 +48,7 @@ router.get('/latest', async (req, res) => {
          a.title,
          a.slug,
          a.summary,
+         a.meta_description,
          a.image_url,
          a.language_code,
          a.category_id,
@@ -161,7 +162,7 @@ router.get('/:id/related', async (req, res) => {
     if (baseRes.rowCount === 0) return res.status(404).json({ error: 'Not found' });
     const { category_id, slug } = baseRes.rows[0];
     const rel = await query(
-      `SELECT id, title, slug, summary, image_url, language_code, published_at, created_at
+      `SELECT id, title, slug, summary, meta_description, image_url, language_code, published_at, created_at
        FROM articles
        WHERE category_id = $1 AND language_code = $2 AND id <> $3 AND slug <> $4
        ORDER BY COALESCE(published_at, created_at) DESC, id DESC

@@ -203,6 +203,70 @@ router.get('/robots.txt', async (req, res) => {
   ].join('\n'));
 });
 
+// Minimal RSS feed with the latest 50 articles across supported languages
+router.get('/rss.xml', async (req, res) => {
+  try {
+    const base = getBaseUrl(req);
+    const langs = Array.isArray(config.languages) && config.languages.length > 0 ? config.languages : ['en'];
+    const { rows } = await query(
+      `SELECT 
+         a.id,
+         a.title,
+         a.slug,
+         a.summary,
+         a.language_code,
+         a.image_url,
+         COALESCE(a.published_at, a.created_at) AS date,
+         c.slug AS category_slug
+       FROM articles a
+       LEFT JOIN categories c ON c.id = a.category_id
+       WHERE a.language_code = ANY($1)
+       ORDER BY COALESCE(a.published_at, a.created_at) DESC, a.id DESC
+       LIMIT 50`,
+      [langs]
+    );
+    const items = rows.map((r) => {
+      const url = `${base}/${r.language_code}/article/${encodeURIComponent(r.slug)}`;
+      const title = escXml(r.title || '');
+      const description = escXml(r.summary || '');
+      const pubDate = new Date(r.date).toUTCString();
+      const guid = `${r.language_code}:${r.slug}:${r.id}`;
+      const category = escXml(r.category_slug || '');
+      const enclosure = r.image_url ? `\n      <enclosure url="${escXml(r.image_url)}" type="image/jpeg" />` : '';
+      return [
+        '    <item>',
+        `      <title>${title}</title>`,
+        `      <link>${escXml(url)}</link>`,
+        `      <guid isPermaLink="false">${guid}</guid>`,
+        (category ? `      <category>${category}</category>` : ''),
+        `      <pubDate>${pubDate}</pubDate>`,
+        `      <description><![CDATA[${r.summary || ''}]]></description>`,
+        enclosure,
+        '    </item>'
+      ].filter(Boolean).join('\n');
+    }).join('\n');
+
+    const rss = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<rss version="2.0">',
+      '  <channel>',
+      `    <title>${escXml(config?.seo?.siteTitle || 'Viva Verse')}</title>`,
+      `    <link>${escXml(base)}</link>`,
+      `    <description>${escXml(config?.seo?.siteDescription || 'Latest articles')}</description>`,
+      `    <language>${escXml(langs[0])}</language>`,
+      items,
+      '  </channel>',
+      '</rss>'
+    ].join('\n');
+
+    res.setHeader('Content-Type', 'application/rss+xml; charset=UTF-8');
+    res.setHeader('Cache-Control', 'public, max-age=600');
+    res.send(rss);
+  } catch (err) {
+    res.status(500).type('text/plain').send('Failed to generate RSS');
+  }
+});
+
 export default router;
 
 
