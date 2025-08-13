@@ -62,6 +62,8 @@ router.get('/latest', async (req, res) => {
        LIMIT $2`,
       [language, limit]
     );
+    res.set('Vary', 'Accept-Language');
+    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     res.json({ data: result.rows, language });
   } catch (err) {
     res.status(500).json({ error: 'Failed to load latest articles' });
@@ -141,6 +143,8 @@ router.get('/slug/:slug', async (req, res) => {
       [candidates, candidates[0], candidates[1], candidates[2], candidates[3]]
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'Not found' });
+    res.set('Vary', 'Accept-Language');
+    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     res.json({ data: result.rows[0], language });
   } catch (err) {
     res.status(500).json({ error: 'Failed to load article' });
@@ -164,6 +168,8 @@ router.get('/:id/related', async (req, res) => {
        LIMIT 10`,
       [category_id, language, id, slug]
     );
+    res.set('Vary', 'Accept-Language');
+    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     res.json({ data: rel.rows, language });
   } catch (err) {
     res.status(500).json({ error: 'Failed to load related articles' });

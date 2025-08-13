@@ -47,6 +47,8 @@ router.get('/', async (req, res) => {
     );
     
     console.log(`[categories] Found ${result.rows.length} categories for language: ${language}`);
+    res.set('Vary', 'Accept-Language');
+    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     res.json({ data: result.rows, language });
   } catch (err) {
     console.error('[categories] Error:', err);
@@ -122,6 +124,8 @@ router.get('/:id/articles', async (req, res) => {
        LIMIT 200`,
       [id, language]
     );
+    res.set('Vary', 'Accept-Language');
+    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     res.json({ data: result.rows, language });
   } catch (err) {
     res.status(500).json({ error: 'Failed to load articles' });
