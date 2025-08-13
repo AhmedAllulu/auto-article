@@ -11,6 +11,7 @@ import { config, isProduction } from './config.js';
 import categoriesRoute from './routes/categories.js';
 import articlesRoute from './routes/articles.js';
 import { runGenerationBatch } from './services/generation.js';
+import seoRoute from './routes/seo.js';
 import { query } from './db.js';
 import { openapiSpecification } from './docs/swagger.js';
 
@@ -52,6 +53,7 @@ app.get('/health', async (req, res) => {
 
 app.use('/categories', categoriesRoute);
 app.use('/articles', articlesRoute);
+app.use('/', seoRoute);
 
 // OpenAPI/Swagger endpoints
 app.get('/openapi.json', (_req, res) => {
