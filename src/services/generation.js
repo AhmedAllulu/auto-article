@@ -94,9 +94,9 @@ Summarize the main points in 2-3 sentences.
 **Keywords:** Provide 15-25 items mixing the primary keyword and related entities
 **Related Topics:** topic1, topic2, topic3
 **Recommended Reading:** 
-- Link text for internal article 1
-- Link text for internal article 2
-- Link text for internal article 3
+- Link text for external article 1
+- Link text for external article 2
+- Link text for external article 3
 
 Write naturally and comprehensively. Aim for 2000+ total words with expert-level depth and practical value.`;
 
@@ -451,7 +451,7 @@ function buildMasterExpansionPrompt(categoryName, masterJson) {
 - Intro >= 200 words.
 - Each section body >= 400-500 words with rich details, data, examples, tips, case studies, and future trends.
 - FAQ: 8-10 entries; each answer >= 100-150 words.
-- Include keywords (15-25 items) and internalLinks (8-12 items with ascii slugSuggestion) and 5-10 credible sourceUrls (avoid example.com).
+- Include keywords (15-25 items) and extrnalLinks (8-12 items with ascii slugSuggestion) and 5-10 credible sourceUrls (avoid example.com).
 - Keep tone authoritative and practical; preserve JSON schema and fields.
 - Do not include any text outside JSON.
 
