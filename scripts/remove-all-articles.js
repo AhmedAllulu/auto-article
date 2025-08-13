@@ -6,7 +6,7 @@ async function removeAllArticles() {
   
   try {
     // Simple delete all articles
-    const deleteResult = await query('select * from articles');
+    const deleteResult = await query('DELETE FROM articles');
     console.log(`✅ Deleted ${deleteResult.rowCount} articles`);
     
   } catch (error) {
