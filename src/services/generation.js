@@ -3,7 +3,7 @@ import { query, withTransaction } from '../db.js';
 import { config } from '../config.js';
 import { toSlug } from '../utils/slug.js';
 import { fetchUnsplashImageUrl } from './unsplash.js';
-import { generateArticleWithSearch, generateNoSearch } from './oneMinAI.js';
+import { generateArticleWithSearch, generateNoSearch, generateRobustArticle } from './oneMinAI.js';
 
 // Debug logging for generation flow (enable with DEBUG_GENERATION=true)
 const DEBUG_GENERATION = String(process.env.DEBUG_GENERATION || 'false') === 'true';
@@ -47,21 +47,44 @@ function buildMasterPrompt(categoryName) {
   const system = `You are an expert SEO content strategist and writer. Write high-quality, deeply informative, fact-checked articles with schema-friendly structure.
 
 Important output rule: Respond ONLY with raw JSON matching the requested schema. Do not include any explanation, markdown, or code fences.`;
-  const user = `Task: Research trending topics in the category "${categoryName}" and create ONE full SEO-optimized master article.
 
-Requirements:
-- Catchy SEO title (H1)
-- Intro paragraph (at least 120-180 words)
-- Structured subheadings (H2/H3)
-- Each section body should be substantial (200-300+ words) with rich details and examples
-- Keyword optimization for high-intent queries
-- FAQ section (5 Q&A)
+  const user = `Task: Research trending topics in the category "${categoryName}" and create ONE comprehensive SEO-optimized master article.
+
+CRITICAL REQUIREMENTS - MINIMUM WORD COUNTS:
+- Total article must be at least 2000+ words
+- Intro paragraph: minimum 200-250 words (detailed introduction)
+- Each section body: minimum 400-500 words with rich details, examples, statistics, and actionable insights
+- Create at least 5-6 major sections minimum
+- FAQ section: 8-10 detailed Q&A pairs (each answer 100+ words)
+
+CONTENT REQUIREMENTS:
+- Catchy SEO title (H1) - make it compelling and keyword-rich
+- Comprehensive intro paragraph explaining the topic's importance, current trends, and what readers will learn
+- At least 5-6 structured subheadings (H2/H3) covering different aspects thoroughly
+- Each section must include:
+  * Detailed explanations with specific examples
+  * Current industry statistics and data
+  * Best practices and actionable tips
+  * Real-world case studies or scenarios
+  * Future trends and predictions
+- Extensive FAQ section with detailed answers
 - Natural internal linking suggestions (anchor text + suggested slug)
-- Meta title and meta description
-- Include tags/keywords list
-- Keep tone authoritative, clear, and helpful.
+- Meta title and meta description optimized for SEO
+- Include comprehensive tags/keywords list
+- Authoritative, expert tone with practical value
 
-Output strictly JSON with fields: title, metaTitle, metaDescription, intro, sections (array of {heading, body}), faq (array of {q, a}), keywords (array of strings), internalLinks (array of {anchor, slugSuggestion}), summary (2-3 sentences), sourceUrls (array), category: "${categoryName}".`;
+DEPTH AND DETAIL:
+- Cover the topic comprehensively from multiple angles
+- Include beginner to advanced insights
+- Address common pain points and solutions
+- Provide step-by-step guidance where applicable
+- Reference current industry trends and future outlook
+- Make every section substantial and valuable
+
+Output strictly JSON with fields: title, metaTitle, metaDescription, intro, sections (array of {heading, body}), faq (array of {q, a}), keywords (array of strings), internalLinks (array of {anchor, slugSuggestion}), summary (2-3 detailed sentences), sourceUrls (array), category: "${categoryName}".
+
+Remember: This must be a comprehensive, authoritative article that provides genuine value and ranks well in search engines. Minimum 2000+ words total.`;
+
   return { system, user };
 }
 
@@ -77,6 +100,133 @@ Return the same JSON structure fields. Output strictly valid JSON only.
 
 CONTENT:
 ${JSON.stringify(masterJson)}`;
+  return { system, user };
+}
+
+function countWords(text) {
+  return String(text || '')
+    .split(/\s+/)
+    .filter(Boolean).length;
+}
+
+// Remove code fences and inline code blocks to extract plain text
+function stripCodeBlocks(raw) {
+  return String(raw || '').replace(/```[\s\S]*?```/g, '').replace(/`[^`]*`/g, '');
+}
+
+function extractTitleFromRaw(content, categoryName) {
+  const text = String(content || '');
+  // 1) Try to pull a JSON-like title field
+  const mJsonTitle = text.match(/"title"\s*:\s*"([^"\n]{3,200})"/i);
+  if (mJsonTitle && mJsonTitle[1]) return mJsonTitle[1].trim();
+  // 2) Use first markdown heading
+  const lines = text.split(/\r?\n/);
+  for (const line of lines) {
+    const h1 = line.match(/^\s*#{1,3}\s+(.{3,200})/);
+    if (h1 && h1[1]) return h1[1].trim();
+  }
+  // 3) First non-empty line as a fallback
+  const cleaned = stripCodeBlocks(text)
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (cleaned.length) return cleaned[0].slice(0, 120);
+  // 4) Category-based default
+  return `Insights in ${categoryName}`;
+}
+
+function extractSummaryFromRaw(content) {
+  const cleaned = stripCodeBlocks(String(content || '')).replace(/\s+/g, ' ').trim();
+  if (!cleaned) return '';
+  // Take first 2 sentences or up to ~300 chars
+  const sentences = cleaned.split(/(?<=[.!?])\s+/).slice(0, 2).join(' ');
+  const summary = sentences || cleaned;
+  return summary.length > 300 ? summary.slice(0, 297) + '...' : summary;
+}
+
+function evaluateMasterQuality(masterJson) {
+  const introWords = countWords(masterJson?.intro || '');
+  const sections = Array.isArray(masterJson?.sections) ? masterJson.sections : [];
+  const faq = Array.isArray(masterJson?.faq) ? masterJson.faq : [];
+  const sources = Array.isArray(masterJson?.sourceUrls) ? masterJson.sourceUrls : [];
+
+  let sectionMinOk = true;
+  let sectionsTotal = 0;
+  for (const s of sections) {
+    const w = countWords(s?.body || '');
+    sectionsTotal += w;
+    if (w < 400) sectionMinOk = false;
+  }
+
+  let faqMinOk = faq.length >= 8;
+  let faqTotal = 0;
+  for (const f of faq) {
+    const w = countWords(f?.a || '');
+    faqTotal += w;
+    if (w < 100) faqMinOk = false;
+  }
+
+  const totalWords = introWords + sectionsTotal + faqTotal;
+
+  const validSources = sources.filter((u) =>
+    typeof u === 'string' &&
+    /^https?:\/\//i.test(u) &&
+    !/example\.com/i.test(u) &&
+    !/lorem|dummy|test/i.test(u)
+  );
+  const sourcesOk = validSources.length >= 5;
+
+  return {
+    totalWords,
+    introOk: introWords >= 200,
+    sectionMinOk,
+    faqMinOk,
+    sourcesOk,
+    meetsAll: introWords >= 200 && sectionMinOk && faqMinOk && totalWords >= 2000 && sourcesOk,
+  };
+}
+
+function buildMasterExpansionPrompt(categoryName, masterJson) {
+  const system = `You are an expert SEO writer. Expand content to meet strict length and structure requirements. Output ONLY valid JSON.`;
+  const user = `Expand the following master article JSON for category "${categoryName}" to satisfy ALL constraints:
+- Total words >= 2000 (intro + sections + FAQ answers).
+- Intro >= 200 words.
+- Each section body >= 400-500 words with rich details, data, examples, tips, case studies, and future trends.
+- FAQ: 8-10 entries; each answer >= 100-150 words.
+- Include keywords (15-25 items) and internalLinks (8-12 items with ascii slugSuggestion) and 5-10 credible sourceUrls (avoid example.com).
+- Keep tone authoritative and practical; preserve JSON schema and fields.
+- Do not include any text outside JSON.
+
+INPUT JSON:
+${JSON.stringify(masterJson)}`;
+  return { system, user };
+}
+
+function canonicalForSlug(slug) {
+  const base = String(config.seo.canonicalBaseUrl || '').replace(/\/+$/, '');
+  if (!base) return null;
+  return `${base}/${slug}`;
+}
+
+function buildMasterRepairPrompt(rawContent) {
+  const system = `You are a strict JSON formatter. You receive imperfect or partial AI output and must return a single valid JSON object only. No explanations.`;
+  const user = `Convert the following content into a single valid JSON object for a master article with fields:
+title, metaTitle, metaDescription, intro, sections (array of {heading, body}), faq (array of {q, a}), keywords (array of strings), internalLinks (array of {anchor, slugSuggestion}), summary, sourceUrls (array), category.
+Ensure all fields exist. Do not include any text outside JSON. If content is truncated, complete it logically.
+
+CONTENT:
+${String(rawContent).slice(0, 20000)}`;
+  return { system, user };
+}
+
+function buildTranslationRepairPrompt(targetLang, rawContent) {
+  const system = `You are a strict JSON formatter and translator. Return a single valid JSON object only. No explanations.`;
+  const user = `Repair to valid JSON and ensure it is translated to language: ${targetLang}. Keep same structure and fields as the master article schema.
+Fields: title, metaTitle, metaDescription, intro, sections (array of {heading, body}), faq (array of {q, a}), keywords (array of strings), internalLinks (array of {anchor, slugSuggestion}), summary, sourceUrls (array), category.
+Do not include any text outside JSON.
+
+CONTENT:
+${String(rawContent).slice(0, 20000)}`;
   return { system, user };
 }
 // Try to parse JSON from imperfect AI responses by extracting code-fenced or first balanced JSON object
@@ -238,30 +388,170 @@ function assembleHtml(master) {
       parts.push(`<p>${f.a}</p>`);
     }
   }
+  if (Array.isArray(master.internalLinks) && master.internalLinks.length) {
+    parts.push('<h2>Related links</h2>');
+    parts.push('<ul>');
+    const seen = new Set();
+    const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+    for (const link of master.internalLinks) {
+      const anchor = String(link?.anchor || '').trim();
+      const slugSuggestion = String(link?.slugSuggestion || '').trim();
+      if (!anchor || !slugRegex.test(slugSuggestion) || seen.has(slugSuggestion)) continue;
+      seen.add(slugSuggestion);
+      const href = `/${slugSuggestion}`;
+      parts.push(`<li><a href="${href}">${anchor}</a></li>`);
+    }
+    parts.push('</ul>');
+  }
+  if (Array.isArray(master.keywords) && master.keywords.length) {
+    parts.push('<h2>Tags</h2>');
+    parts.push(`<p>${master.keywords.join(', ')}</p>`);
+  }
   return parts.join('\n');
 }
 
-async function createMasterAndTranslations(category) {
+function escapeJsonForHtml(obj) {
+  try {
+    return JSON.stringify(obj).replace(/</g, '\\u003c');
+  } catch {
+    return '{}';
+  }
+}
+
+function buildArticleJsonLd({ masterJson, title, description, canonicalUrl, imageUrl, languageCode }) {
+  const faqEntities = Array.isArray(masterJson?.faq)
+    ? masterJson.faq.map((f) => ({
+        '@type': 'Question',
+        name: f?.q || '',
+        acceptedAnswer: { '@type': 'Answer', text: f?.a || '' },
+      }))
+    : [];
+
+  const articleLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: title,
+    description: description,
+    inLanguage: languageCode || 'en',
+    mainEntityOfPage: canonicalUrl || undefined,
+    image: imageUrl ? [imageUrl] : undefined,
+    datePublished: new Date().toISOString(),
+    keywords: Array.isArray(masterJson?.keywords) ? masterJson.keywords.join(', ') : undefined,
+    articleSection: Array.isArray(masterJson?.sections) ? masterJson.sections.map((s) => s?.heading).filter(Boolean) : undefined,
+  };
+
+  const faqLd = faqEntities.length
+    ? {
+        '@context': 'https://schema.org',
+        '@type': 'FAQPage',
+        mainEntity: faqEntities,
+      }
+    : null;
+
+  return [articleLd, faqLd].filter(Boolean);
+}
+
+function appendJsonLd(html, ldArray) {
+  if (!ldArray || !ldArray.length) return html;
+  const payload = ldArray.length === 1 ? ldArray[0] : ldArray;
+  const json = escapeJsonForHtml(payload);
+  return `${html}\n<script type="application/ld+json">${json}</script>`;
+}
+
+async function createMasterArticle(category) {
   const { system, user } = buildMasterPrompt(category.name);
   genLog('AI master start', { category: category.slug });
   const tMasterStart = Date.now();
-  const ai = await generateArticleWithSearch(system, user);
+  // Use robust generation with fallbacks to avoid 504s
+  const ai = await generateRobustArticle({ system, user, preferWebSearch: config.oneMinAI.enableWebSearch });
   genLog('AI master done', { category: category.slug, ms: Date.now() - tMasterStart });
   let masterJson = parseJsonFromContent(ai.content);
   if (!masterJson) {
-    if (DEBUG_GENERATION) genLog('Master JSON parse failed. Content preview:', String(ai.content).slice(0, 400));
-    throw new Error('AI did not return valid JSON for master article');
+    if (DEBUG_GENERATION)
+      genLog('Master JSON parse failed. Content preview:', String(ai.content).slice(0, 400));
+    // Attempt a repair pass with a strict JSON repair prompt
+    const { system: rs, user: ru } = buildMasterRepairPrompt(ai.content);
+    try {
+      const repaired = await generateRobustArticle({ system: rs, user: ru, preferWebSearch: false });
+      masterJson = parseJsonFromContent(repaired.content);
+    } catch {}
+  }
+  // If still no JSON, fallback: extract minimal fields from raw and save anyway
+  if (!masterJson) {
+    const fallbackTitle = extractTitleFromRaw(ai.content, category.name);
+    const slugBase = toSlug(fallbackTitle);
+    const summary = extractSummaryFromRaw(ai.content);
+    const contentHtml = `<p>${summary}</p>`;
+    const metaTitle = fallbackTitle;
+    const metaDescription = summary;
+    const canonicalUrl = canonicalForSlug(slugBase);
+    const tImgStart = Date.now();
+    const imageUrl = await fetchUnsplashImageUrl(fallbackTitle);
+    genLog('Unsplash fetched (fallback)', { category: category.slug, ms: Date.now() - tImgStart, hasImage: Boolean(imageUrl) });
+    const readingTime = estimateReadingTimeMinutes(contentHtml);
+    const contentHash = computeHash(contentHtml + fallbackTitle);
+
+    const masterArticle = {
+      title: fallbackTitle,
+      slug: slugBase,
+      content: contentHtml,
+      summary,
+      language_code: 'en',
+      category_id: category.id,
+      image_url: imageUrl,
+      meta_title: metaTitle,
+      meta_description: metaDescription,
+      canonical_url: canonicalUrl,
+      reading_time_minutes: readingTime,
+      ai_model: 'fallback-raw',
+      ai_prompt: user,
+      ai_tokens_input: 0,
+      ai_tokens_output: 0,
+      total_tokens: 0,
+      source_url: null,
+      content_hash: contentHash,
+    };
+
+    // Append minimal JSON-LD with just headline/description
+    const masterLd = buildArticleJsonLd({
+      masterJson: {},
+      title: fallbackTitle,
+      description: metaDescription,
+      canonicalUrl,
+      imageUrl,
+      languageCode: 'en',
+    });
+    masterArticle.content = appendJsonLd(masterArticle.content, masterLd);
+
+    return { masterArticle, masterJson: null };
+  }
+
+  // Quality gate: ensure length/structure/sources; attempt up to two expansion passes if needed
+  let quality = evaluateMasterQuality(masterJson);
+  for (let pass = 0; pass < 2 && !quality.meetsAll; pass++) {
+    const { system: es, user: eu } = buildMasterExpansionPrompt(category.name, masterJson);
+    try {
+      const expanded = await generateRobustArticle({ system: es, user: eu, preferWebSearch: false });
+      const expandedJson = parseJsonFromContent(expanded.content);
+      if (expandedJson) {
+        masterJson = expandedJson;
+        quality = evaluateMasterQuality(masterJson);
+      }
+    } catch {}
+  }
+
+  // Quality not fully met: log and continue saving to avoid data loss
+  if (!quality.meetsAll) {
+    genLog('Quality not fully met, saving anyway', { category: category.slug, quality });
   }
 
   const title = masterJson.title || `Insights in ${category.name}`;
   const slugBase = toSlug(title);
-  const contentHtml = assembleHtml(masterJson);
+  let contentHtml = assembleHtml(masterJson);
   const summary = masterJson.summary || '';
   const metaTitle = masterJson.metaTitle || title;
   const metaDescription = masterJson.metaDescription || summary || '';
-  const canonicalUrl = config.seo.canonicalBaseUrl
-    ? `${config.seo.canonicalBaseUrl}/${slugBase}`
-    : null;
+  const canonicalUrl = canonicalForSlug(slugBase);
   const tImgStart = Date.now();
   const imageUrl = await fetchUnsplashImageUrl(title);
   genLog('Unsplash fetched', { category: category.slug, ms: Date.now() - tImgStart, hasImage: Boolean(imageUrl) });
@@ -289,53 +579,84 @@ async function createMasterAndTranslations(category) {
     content_hash: contentHash,
   };
 
-  const translations = [];
-  for (const lang of config.languages) {
-    if (lang === 'en') continue;
-    const { system: ts, user: tu } = buildTranslationPrompt(lang, masterJson);
-    genLog('AI translation start', { category: category.slug, lang });
-    const tTransStart = Date.now();
-    const aiT = await generateNoSearch(ts, tu);
-    genLog('AI translation done', { category: category.slug, lang, ms: Date.now() - tTransStart });
-    let tJson = parseJsonFromContent(aiT.content);
-    if (!tJson) {
-      genLog('Translation JSON parse failed, skipping', { category: category.slug, lang });
-      continue;
-    }
-    const tTitle = tJson.title || title;
-    const tSlug = `${slugBase}-${lang}`;
-    const tContent = assembleHtml(tJson);
-    const tSummary = tJson.summary || summary;
-    const tMetaTitle = tJson.metaTitle || tTitle;
-    const tMetaDesc = tJson.metaDescription || tSummary || '';
-    const tCanonical = config.seo.canonicalBaseUrl
-      ? `${config.seo.canonicalBaseUrl}/${tSlug}`
-      : null;
-    const tHash = computeHash(tContent + tTitle + lang);
+  // Append JSON-LD schema to master content
+  const masterLd = buildArticleJsonLd({
+    masterJson,
+    title,
+    description: metaDescription,
+    canonicalUrl,
+    imageUrl,
+    languageCode: 'en',
+  });
+  masterArticle.content = appendJsonLd(masterArticle.content, masterLd);
 
-    translations.push({
-      title: tTitle,
-      slug: tSlug,
-      content: tContent,
-      summary: tSummary,
-      language_code: lang,
-      category_id: category.id,
-      image_url: imageUrl,
-      meta_title: tMetaTitle,
-      meta_description: tMetaDesc,
-      canonical_url: tCanonical,
-      reading_time_minutes: estimateReadingTimeMinutes(tContent),
-      ai_model: aiT.model,
-      ai_prompt: tu,
-      ai_tokens_input: aiT.usage?.prompt_tokens || 0,
-      ai_tokens_output: aiT.usage?.completion_tokens || 0,
-      total_tokens: aiT.usage?.total_tokens || 0,
-      source_url: masterArticle.source_url,
-      content_hash: tHash,
-    });
+  return { masterArticle, masterJson };
+}
+
+async function generateTranslationArticle({ lang, category, masterJson, slugBase, title, summary, imageUrl }) {
+  const { system: ts, user: tu } = buildTranslationPrompt(lang, masterJson);
+  genLog('AI translation start', { category: category.slug, lang });
+  const tTransStart = Date.now();
+  // Use robust generation preferring no web search for translations
+  const aiT = await generateRobustArticle({ system: ts, user: tu, preferWebSearch: false });
+  genLog('AI translation done', { category: category.slug, lang, ms: Date.now() - tTransStart });
+
+  let tJson = parseJsonFromContent(aiT.content);
+  if (!tJson) {
+    // Attempt a repair pass to salvage the translation JSON
+    const { system: rs, user: ru } = buildTranslationRepairPrompt(lang, aiT.content);
+    try {
+      const repaired = await generateRobustArticle({ system: rs, user: ru, preferWebSearch: false });
+      tJson = parseJsonFromContent(repaired.content);
+    } catch {}
+  }
+  if (!tJson) {
+    genLog('Translation JSON parse failed, skipping', { category: category.slug, lang });
+    return null;
   }
 
-  return { masterArticle, translations };
+  const tTitle = tJson.title || title;
+  const tSlug = `${slugBase}-${lang}`;
+  let tContent = assembleHtml(tJson);
+  const tSummary = tJson.summary || summary;
+  const tMetaTitle = tJson.metaTitle || tTitle;
+  const tMetaDesc = tJson.metaDescription || tSummary || '';
+  const tCanonical = canonicalForSlug(tSlug);
+  const tHash = computeHash(tContent + tTitle + lang);
+
+  const tArticle = {
+    title: tTitle,
+    slug: tSlug,
+    content: tContent,
+    summary: tSummary,
+    language_code: lang,
+    category_id: category.id,
+    image_url: imageUrl,
+    meta_title: tMetaTitle,
+    meta_description: tMetaDesc,
+    canonical_url: tCanonical,
+    reading_time_minutes: estimateReadingTimeMinutes(tContent),
+    ai_model: aiT.model,
+    ai_prompt: tu,
+    ai_tokens_input: aiT.usage?.prompt_tokens || 0,
+    ai_tokens_output: aiT.usage?.completion_tokens || 0,
+    total_tokens: aiT.usage?.total_tokens || 0,
+    source_url: (masterJson.sourceUrls && masterJson.sourceUrls[0]) || null,
+    content_hash: tHash,
+  };
+
+  // Append JSON-LD schema to translation content
+  const tLd = buildArticleJsonLd({
+    masterJson: tJson,
+    title: tTitle,
+    description: tMetaDesc || tSummary,
+    canonicalUrl: tCanonical,
+    imageUrl: imageUrl,
+    languageCode: lang,
+  });
+  tArticle.content = appendJsonLd(tArticle.content, tLd);
+
+  return tArticle;
 }
 
 export async function runGenerationBatch() {
@@ -369,42 +690,98 @@ export async function runGenerationBatch() {
 
   let generatedCount = 0;
 
+  // Phase 1: Generate and insert all masters first
+  genLog('Masters phase start');
+  const mastersPrepared = [];
   let mastersGenerated = 0;
   for (const category of orderedCategories) {
     if (generatedCount >= config.generation.maxBatchPerRun) break;
     if (mastersGenerated >= config.generation.maxMastersPerRun) break;
+    if (generatedCount >= remaining) break;
 
     try {
-      genLog('Processing category', { slug: category.slug });
-      const { masterArticle, translations } = await createMasterAndTranslations(
-        category
-      );
+      genLog('Processing category (master)', { slug: category.slug });
+      const { masterArticle, masterJson } = await createMasterArticle(category);
 
       await withTransaction(async (client) => {
         genLog('Inserting master article', { slug: masterArticle.slug });
-        // Insert master first
-        const masterInserted = await insertArticle(client, masterArticle);
+        await insertArticle(client, masterArticle);
+        await updateDailyTokenUsage(client, [
+          {
+            prompt_tokens: masterArticle.ai_tokens_input,
+            completion_tokens: masterArticle.ai_tokens_output,
+          },
+        ]);
+        await incrementJobCount(client, 1);
+      });
 
-        // Score translations by language priority; take top N by config
-        const sortedTranslations = translations
-          .map((t) => ({
-            item: t,
-            score: computePriorityScore({
-              categorySlug: category.slug,
-              languageCode: t.language_code,
-              countryCode: bestMarketForLanguage(t.language_code),
-            }),
-          }))
-          .sort((a, b) => b.score - a.score)
-          .slice(0, Math.max(0, config.generation.maxTranslationsPerMaster))
-          .map((x) => x.item);
+      mastersPrepared.push({ category, masterArticle, masterJson });
+      mastersGenerated += 1;
+      generatedCount += 1;
+      genLog('Master done', { slug: category.slug, total: generatedCount });
+    } catch (err) {
+      genLog('Category failed (master)', { slug: category.slug, error: String(err?.message || err) });
+      continue;
+    }
+  }
 
-        const usages = [{
-          prompt_tokens: masterArticle.ai_tokens_input,
-          completion_tokens: masterArticle.ai_tokens_output,
-        }];
+  // Phase 2: Generate and insert translations for prepared masters
+  genLog('Translations phase start', { masters: mastersPrepared.length });
+  for (const item of mastersPrepared) {
+    if (generatedCount >= config.generation.maxBatchPerRun) break;
+    if (generatedCount >= remaining) break;
 
-        for (const t of sortedTranslations) {
+    const { category, masterArticle, masterJson } = item;
+
+    // If we only have a fallback master (no structured JSON), skip translations
+    if (!masterJson) {
+      genLog('Skipping translations for fallback master', { slug: masterArticle.slug });
+      continue;
+    }
+
+    // Determine translation language order and cap per master
+    const candidateLangs = (config.languages || []).filter((l) => l !== 'en');
+    const orderedLangs = candidateLangs
+      .map((languageCode) => ({
+        languageCode,
+        score: computePriorityScore({
+          categorySlug: category.slug,
+          languageCode,
+          countryCode: bestMarketForLanguage(languageCode),
+        }),
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, Math.max(0, config.generation.maxTranslationsPerMaster))
+      .map((x) => x.languageCode);
+
+    const preparedTranslations = [];
+    for (const lang of orderedLangs) {
+      if (generatedCount + preparedTranslations.length >= config.generation.maxBatchPerRun) break;
+      if (generatedCount + preparedTranslations.length >= remaining) break;
+      try {
+        const tArticle = await generateTranslationArticle({
+          lang,
+          category,
+          masterJson,
+          slugBase: masterArticle.slug,
+          title: masterArticle.title,
+          summary: masterArticle.summary,
+          imageUrl: masterArticle.image_url,
+        });
+        if (tArticle) preparedTranslations.push(tArticle);
+      } catch (e) {
+        genLog('Translation generation failed, skipping', { slug: category.slug, lang, error: String(e?.message || e) });
+        continue;
+      }
+    }
+
+    if (preparedTranslations.length === 0) continue;
+
+    try {
+      await withTransaction(async (client) => {
+        const usages = [];
+        let inserted = 0;
+        for (const t of preparedTranslations) {
           try {
             genLog('Inserting translation', { slug: t.slug, lang: t.language_code });
             await insertArticle(client, t);
@@ -412,23 +789,19 @@ export async function runGenerationBatch() {
               prompt_tokens: t.ai_tokens_input,
               completion_tokens: t.ai_tokens_output,
             });
+            inserted += 1;
           } catch (e) {
-            // Likely duplicate slug/hash, skip
+            // Likely duplicate slug/hash, skip insert
+            continue;
           }
         }
-
-        await updateDailyTokenUsage(client, usages);
-        await incrementJobCount(client, 1 + sortedTranslations.length);
+        if (usages.length) await updateDailyTokenUsage(client, usages);
+        if (inserted) await incrementJobCount(client, inserted);
+        generatedCount += inserted;
       });
-
-      mastersGenerated += 1;
-      generatedCount += 1 + sortedTranslations.length;
-      genLog('Category done', { slug: category.slug, added: 1 + translations.length, total: generatedCount });
-      if (generatedCount >= remaining) break;
-    } catch (err) {
-      // Continue to next category
-      // Optionally log errors; kept minimal here
-      genLog('Category failed', { slug: category.slug, error: String(err?.message || err) });
+    } catch (e) {
+      // Even if the transaction fails, continue to next master
+      genLog('Translations phase failed for master', { slug: masterArticle.slug, error: String(e?.message || e) });
       continue;
     }
   }

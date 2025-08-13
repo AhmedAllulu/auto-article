@@ -74,7 +74,7 @@ router.get('/', async (req, res) => {
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/ApiResponseArticleList'
+ *               $ref: '#/components/schemas/ApiResponseArticleFullList'
  *       '400':
  *         description: Invalid id
  *         content:
@@ -94,9 +94,32 @@ router.get('/:id/articles', async (req, res) => {
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
   try {
     const result = await query(
-      `SELECT id, title, slug, summary, image_url, language_code, meta_title, meta_description, created_at
-       FROM articles WHERE category_id = $1 AND language_code = $2
-       ORDER BY created_at DESC LIMIT 200`,
+      `SELECT 
+         id,
+         title,
+         slug,
+         content,
+         summary,
+         image_url,
+         language_code,
+         meta_title,
+         meta_description,
+         canonical_url,
+         reading_time_minutes,
+         ai_model,
+         ai_prompt,
+         ai_tokens_input,
+         ai_tokens_output,
+         total_tokens,
+         source_url,
+         content_hash,
+         category_id,
+         published_at,
+         created_at
+       FROM articles 
+       WHERE category_id = $1 AND language_code = $2
+       ORDER BY created_at DESC 
+       LIMIT 200`,
       [id, language]
     );
     res.json({ data: result.rows, language });
