@@ -104,6 +104,11 @@ export const config = {
     maxTranslationsPerMaster: Number(process.env.MAX_TRANSLATIONS_PER_MASTER || 7),
     maxMastersPerRun: Number(process.env.MAX_MASTERS_PER_RUN || 14),
     maxMastersPerDay: Number(process.env.MAX_MASTER_DAILY || 10),
+    // ------------ How-To generation controls ------------
+    enableHowTo: String(process.env.ENABLE_HOWTO_GENERATION || 'false') === 'true',
+    howToDailyTarget: Number(process.env.HOWTO_DAILY_TARGET || 50),
+    maxHowTosPerRun: Number(process.env.MAX_HOWTOS_PER_RUN || 10),
+    maxHowTosPerDay: Number(process.env.MAX_HOWTOS_PER_DAY || 50),
   },
   seo: {
     canonicalBaseUrl: process.env.CANONICAL_BASE_URL || '',
