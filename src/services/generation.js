@@ -6,6 +6,8 @@ import { fetchUnsplashImageUrl } from './unsplash.js';
 import { generateArticleWithSearch, generateNoSearch, generateRobustArticle } from './oneMinAI.js';
 import { chatCompletion as openAIChat } from './openAI.js';
 import sanitizeHtml from 'sanitize-html';
+import { getPrompt } from '../prompts/index.js';
+import { buildPrompt as buildTranslationPrompt } from '../prompts/translation.js';
 
 // Debug logging for generation flow (enable with DEBUG_GENERATION=true)
 const DEBUG_GENERATION = String(process.env.DEBUG_GENERATION || 'false') === 'true';
@@ -70,331 +72,15 @@ async function generateUniqueSlug(baseSlug) {
   return `${baseSlug}-${counter}`;
 }
 
-function buildHowToPrompt(categoryName) {
-  // Practical, step-by-step how-to article prompt (no web search required)
-  const system = `You are an expert tutorial writer specializing in clear, actionable how-to guides. Your articles help people solve real problems with step-by-step instructions, troubleshooting tips, and practical solutions.`;
+// Legacy functions removed - now using template system from src/prompts/
 
-  const user = `Write a comprehensive, practical how-to guide for the category "${categoryName}".
-
-CONTENT FOCUS (no web search needed):
-- Create a specific, actionable "how to" topic that solves a real problem
-- Focus on practical, step-by-step instructions that anyone can follow
-- Include troubleshooting tips for common issues
-- Provide clear examples and explanations
-- Address safety considerations when relevant
-
-PRACTICAL APPROACH:
-- Write for someone who needs to solve this problem RIGHT NOW
-- Use clear, simple language with numbered steps
-- Include "what you'll need" sections for tools/materials
-- Add time estimates and difficulty levels
-- Provide alternative methods when possible
-- Include warning signs and what to avoid
-
-TUTORIAL OPTIMIZATION:
-- Target practical keywords naturally (how to, step by step, guide, tutorial)
-- Structure for easy scanning with clear headings
-- Include troubleshooting sections for common problems
-- Add tips for beginners and advanced users
-- Create actionable takeaways and next steps
-
-Structure your response as:
-
-# How to [Specific Action]: [Clear Benefit/Outcome]
-
-**Meta Description:** 150-160 characters promising specific solution and clear outcome
-
-## Introduction (250-300 words)
-- Start with the common problem or need
-- Explain why this skill/knowledge is valuable
-- Preview what they'll accomplish by the end
-- Include any important safety notes or prerequisites
-
-## What You'll Need
-List all tools, materials, or prerequisites required:
-- Specific items with quantities
-- Time required (e.g., "30 minutes preparation, 2 hours total")
-- Skill level (Beginner/Intermediate/Advanced)
-- Any safety equipment needed
-
-## Step-by-Step Instructions
-
-### Step 1: [Clear Action]
-Write 200+ words with detailed instructions, including:
-- Exact actions to take
-- What to look for/expect
-- Common mistakes to avoid
-- Visual cues or indicators of success
-
-### Step 2: [Next Action]
-Write 200+ words continuing the process:
-- Build on previous step
-- Include decision points if applicable
-- Mention alternative approaches
-- Provide troubleshooting tips
-
-### Step 3: [Continue Pattern]
-Write 200+ words for each major step:
-- Maintain logical flow
-- Include quality checks
-- Address timing considerations
-- Note any safety precautions
-
-[Continue with 4-6 total major steps]
-
-## Troubleshooting Common Problems
-
-### Problem: [Common Issue 1]
-Write 150+ words explaining:
-- How to identify this problem
-- Most likely causes
-- Step-by-step solution
-- Prevention tips
-
-### Problem: [Common Issue 2]
-Write 150+ words with similar structure for different common problems
-
-[Include 3-4 common problems total]
-
-## Tips for Success
-Write 300+ words with:
-- Pro tips that make the process easier
-- Ways to improve results
-- Time-saving shortcuts
-- Quality improvement suggestions
-
-## Safety and Precautions
-Write 200+ words covering:
-- Important safety warnings
-- What could go wrong
-- When to seek professional help
-- Legal or regulatory considerations (if applicable)
-
-## Variations and Advanced Techniques
-Write 300+ words explaining:
-- Different approaches for different situations
-- Advanced methods for experienced users
-- Customization options
-- How to adapt for specific needs
-
-## Frequently Asked Questions
-
-### How long does it take to [complete this process]?
-Provide realistic timeframes with factors that affect duration in 120+ words.
-
-### What's the most common mistake beginners make?
-Address the #1 error with detailed prevention advice in 120+ words.
-
-### Do I need professional help, or can I do this myself?
-Help readers assess their capability and when to call experts in 120+ words.
-
-### What tools are absolutely essential vs. nice-to-have?
-Prioritize tools and explain budget-friendly alternatives in 120+ words.
-
-### How do I know if I'm doing it correctly?
-Provide clear success indicators and quality checkpoints in 120+ words.
-
-### What should I do if it's not working?
-Systematic troubleshooting approach and when to start over in 120+ words.
-
-### Are there any risks I should be aware of?
-Honest assessment of potential problems and how to mitigate them in 120+ words.
-
-### How often should I [repeat this process/maintain results]?
-Maintenance schedule and signs it needs to be redone in 120+ words.
-
-## Key Takeaways
-- 5-7 bullet points summarizing the most important steps and tips
-- Focus on critical success factors
-- Include most important safety reminders
-
-## What's Next?
-Write a compelling 100-word section suggesting logical next steps, related skills to learn, or how to build on this accomplishment.
-
-**Primary Keyword:** [main how-to keyword]
-**Secondary Keywords:** [15-20 related tutorial and problem-solving terms]
-**Content Pillars:** [3-4 main themes: steps, troubleshooting, safety, tips]
-**Target Audience:** [specific user type who needs this solution]
-**Difficulty Level:** [Beginner/Intermediate/Advanced]
-**Time Required:** [realistic time estimate]
-
-**Related Resources:**
-- [How-to Guide 1](https://example.com/related-tutorial-1)
-- [Professional Resource](https://example.com/professional-resource)
-- [Tool/Supply Source](https://example.com/recommended-supplier)
-
-WRITING STYLE REQUIREMENTS:
-- Use imperative mood (Do this, Check that, Make sure to...)
-- Include transitional phrases between steps (Next, After that, Once complete...)
-- Write in active voice with clear, direct instructions
-- Balance detailed explanations with concise action items
-- Aim for 8th-grade reading level while maintaining technical accuracy
-- Include 3-5 high-quality external links to authoritative sources
-- Use markdown format for external links: [Link Text](https://actual-external-url.com)
-- Link to official documentation, expert resources, or reputable suppliers
-
-PARAGRAPH FORMATTING REQUIREMENTS:
-- CRITICAL: Use \n (newline character) to create proper spacing between paragraphs
-- Write short, actionable paragraphs of 2-4 sentences each
-- Add \n between every paragraph to improve readability
-- Use bullet points and numbered lists for clarity
-- Each paragraph should focus on one specific action or concept
-- Use \n to separate steps and create visual breathing room
-
-EXTERNAL LINKING REQUIREMENTS:
-- Only include links to external websites (never internal links)
-- Link to official documentation, manufacturer sites, expert tutorials
-- Include tool suppliers, safety organizations, or professional associations
-- Format: [Descriptive Link Text](https://external-domain.com/page)
-
-Target: 2000+ words with maximum practical value and clear actionability.`;
-
-  return { system, user };
+function countWords(text) {
+  return String(text || '')
+    .split(/\s+/)
+    .filter(Boolean).length;
 }
 
-function buildMasterPrompt(categoryName) {
-  // Enhanced human-centered, high-engagement SEO prompt
-  const system = `You are an expert SEO content writer specializing in human-centered, engaging content that ranks well and drives real engagement. Your articles connect with real people facing real problems while optimizing for both search engines and social sharing.`;
 
-  const user = `Write a comprehensive, people-first SEO article for the category "${categoryName}".
-
-RESEARCH PHASE (do silently, don't show research):
-- Use web search to identify 5-8 trending subtopics within ${categoryName} from the Today's Trending Topics
-- Find current pain points, questions, and trending discussions on Reddit, forums, and social media
-- Identify ONE topic with: high user intent + rising search volume + emotional engagement potential
-- Research top 3 competing articles to identify content gaps and improvement opportunities
-
-HUMAN-CENTERED APPROACH:
-- Write for a specific persona: someone actively searching for this information RIGHT NOW
-- Address their emotional state (frustrated? curious? overwhelmed? excited?)
-- Use "you" language and speak directly to the reader
-- Include relatable scenarios, analogies, and real-world examples
-- Balance expert authority with approachable, conversational tone
-
-SEO OPTIMIZATION STRATEGY:
-- Target 1 primary keyword + 10-15 semantic keywords naturally woven throughout
-- Structure for featured snippets and People Also Ask boxes
-- Optimize for voice search with natural question phrasing
-- Include current data, trends, and timely references
-- Add engagement hooks: surprising facts, controversial takes, or bold predictions
-
-ENGAGEMENT BOOSTERS:
-- Start with a hook that makes people stop scrolling
-- Include "aha moments" and actionable insights every 200-300 words
-- Use emotional triggers: fear of missing out, desire for improvement, problem-solving relief
-- Add social proof through real examples, case studies, or user testimonials
-- Create shareable quotes or key insights formatted for social media
-
-Structure your response as:
-
-# Compelling Title That Promises Value (include primary keyword + emotional hook)
-
-**Meta Description:** 150-160 characters that create curiosity and promise specific benefits
-
-## Introduction (250-300 words)
-- Open with a relatable scenario or surprising statistic
-- Acknowledge the reader's pain point or goal
-- Preview the specific value they'll get
-- Include a bold statement or promise about what they'll achieve
-
-## The Real Problem Most People Face
-Write 400+ words identifying common mistakes, misconceptions, or challenges people have with ${categoryName}. Make readers think "Yes, that's exactly my situation!"
-
-## What Actually Works: [Data-Driven Solution Title]
-Write 400+ words with proven strategies, backed by recent data and real examples. Include specific steps, tools, or frameworks.
-
-## Advanced Strategies for [Specific Benefit]
-Write 400+ words covering advanced techniques with case studies, expert insights, and measurable outcomes.
-
-## Common Mistakes That Kill Results
-Write 400+ words highlighting pitfalls to avoid, with explanations of why these mistakes happen and how to prevent them.
-
-## Step-by-Step Implementation Guide
-Write 400+ words with a clear, actionable roadmap readers can follow immediately.
-
-## Real Results: What to Expect
-Write 300+ words setting realistic expectations, timelines, and success metrics.
-
-## Frequently Asked Questions
-
-### What's the #1 mistake beginners make with ${categoryName}?
-Provide specific, actionable answer in 120+ words.
-
-### How long does it take to see results with ${categoryName}?
-Give realistic timelines with factors that influence speed in 120+ words.
-
-### Is ${categoryName} worth it for [specific user type]?
-Address specific audience concerns in 120+ words.
-
-### What tools/resources do I need to get started?
-List specific, practical recommendations in 120+ words.
-
-### How do I know if I'm doing ${categoryName} correctly?
-Provide measurable indicators and checkpoints in 120+ words.
-
-### What's the most cost-effective approach to ${categoryName}?
-Balance budget considerations with effectiveness in 120+ words.
-
-### How does ${categoryName} compare to [popular alternative]?
-Honest comparison with pros/cons in 120+ words.
-
-### What should I do if ${categoryName} isn't working for me?
-Troubleshooting steps and alternative approaches in 120+ words.
-
-## Key Takeaways
-- 5-7 bullet points summarizing the most important, actionable insights
-- Each point should be specific and memorable
-
-## Take Action Now
-Write a compelling 100-word section motivating immediate action with specific next steps.
-
-**Primary Keyword:** [main target keyword]
-**Secondary Keywords:** [15-20 related terms and entities]
-**Content Pillars:** [3-4 main themes covered]
-**Target Audience:** [specific persona description]
-**Content Goals:** [engagement metric targets]
-**Social Hooks:** [2-3 shareable quotes or statistics]
-
-**Recommended External Reading:**
-- [Link Text 1](https://example.com/external-url-1)
-- [Link Text 2](https://example.com/external-url-2)
-- [Link Text 3](https://example.com/external-url-3)
-
-WRITING STYLE REQUIREMENTS:
-- Use transition words and varied sentence lengths for readability
-- Include power words that trigger emotional responses
-- Write in active voice with strong, definitive statements
-- Balance data/facts with stories and analogies
-- Aim for 8th-grade reading level while maintaining expertise
-- Include 3-5 high-quality external links to authoritative sources (NOT internal website links)
-- Use markdown format for external links: [Link Text](https://actual-external-url.com)
-- Link to reputable sources like industry publications, research studies, government sites, or well-known experts
-- End sections with cliffhangers or curiosity gaps when possible
-
-PARAGRAPH FORMATTING REQUIREMENTS:
-- CRITICAL: Use \n (newline character) to create proper spacing between paragraphs
-- Write short, digestible paragraphs of 2-4 sentences each
-- Add \n between every paragraph to improve readability and structure
-- Never write long blocks of text without paragraph breaks
-- Each paragraph should focus on one main point or idea
-- Use \n to separate ideas and create visual breathing room for readers
-- Example format:
-  
-  First paragraph about one specific point.\n
-  Second paragraph starting a new idea with proper spacing.\n
-  Third paragraph continuing with clear separation using newlines.
-
-EXTERNAL LINKING REQUIREMENTS:
-- Only include links to external websites (never internal links to your own site)
-- Use full URLs starting with https://
-- Link to authoritative sources that add genuine value to readers
-- Examples of good external links: industry reports, research studies, expert blogs, government data, case studies
-- Format all external links in markdown: [Descriptive Link Text](https://external-domain.com/page)
-
-Target: 2500+ words with maximum engagement and shareability while maintaining SEO best practices.`;
-
-  return { system, user };
-}
 
 // Success tracking for natural text approach
 const SUCCESS_TRACKER = {
@@ -616,12 +302,7 @@ function extractFromNaturalText(content, categoryName) {
     result.keywords = [categoryName.toLowerCase(), 'guide', 'tips', 'best practices'];
   }
 
-  if (result.externalLinks.length === 0) {
-    result.externalLinks = [
-      { anchor: `${categoryName} Tips`, slugSuggestion: `${toSlug(categoryName)}-tips` },
-      { anchor: `${categoryName} Guide`, slugSuggestion: `${toSlug(categoryName)}-guide` }
-    ];
-  }
+  // Don't add fake external links - only use real ones found in AI content
 
   // Ensure minimum content
   if (result.sections.length === 0) {
@@ -641,98 +322,6 @@ function extractFromNaturalText(content, categoryName) {
   }
 
   return result;
-}
-
-function buildTranslationPrompt(targetLang, masterJson) {
-  const system = `You are a professional translator. Translate the article content into ${targetLang} while PRESERVING all markdown markers (#, ##, ###) and specific label phrases enclosed in double asterisks (e.g., "**Meta Description:**", "**Primary Keyword:**", etc.).
-
-QUALITY REQUIREMENTS (VERY IMPORTANT):
-• Translate EVERY visible word unless explicitly told to keep it in English (see special rules below).
-• Maintain the SAME logical ordering, headings, sub-headings, bullet lists, numbered steps, bold/italic markers, block quotes, code blocks, and all HTML tags/attributes.
-• Use clear, formal, and natural style appropriate for a published web guide in ${targetLang}. Avoid literal word-for-word output and awkward phrasing.
-• When translating technical concepts, favour common local terminology over transliterated English words whenever possible.
-• Preserve punctuation and sentence boundaries to keep paragraph flow intact.
-
-Special rules:
-1. The heading line "## Frequently Asked Questions" MUST remain in English so downstream parsers detect the FAQ block.
-2. All other heading text (including the main title "# ..." and each FAQ question "### ...") SHOULD be translated naturally.
-    • Translate EVERY FAQ question heading that looks like "### ..." — none should remain in English.
-    • The FIRST markdown line begins with '#'. Replace the English title text *completely* with its translated counterpart — keep the leading '# ' marker unchanged.
-    • Do NOT leave English words in headings unless they are brand names or universally recognized technical terms.
-3. Do not add or remove sections and keep line-breaks intact.
-4. CRITICAL: Preserve all \n (newline) characters exactly as they appear for proper paragraph spacing.
-5. Maintain the paragraph structure and spacing - do not merge paragraphs or remove newlines.
-6. KEEP every label wrapped by double asterisks (e.g., **Meta Description:**, **Primary Keyword:**, **Keywords:**, **Recommended Reading:**) in English, but translate the value that follows it.
-    • Translate EVERY line that starts with "###" (FAQ questions). NONE of these lines may remain in English. Use local punctuation and question mark style.
-
-CRITICAL FAQ REQUIREMENT WITH EXAMPLES:
-Every single line starting with "### " MUST be translated completely. Examples:
-- English: "### How long does it take to complete this process?"
-- Arabic: "### كم من الوقت يستغرق إكمال هذه العملية؟"
-- German: "### Wie lange dauert es, diesen Prozess abzuschließen?"
-- Spanish: "### ¿Cuánto tiempo lleva completar este proceso?"
-
-WARNING: If you leave ANY FAQ question heading in English, the translation will be REJECTED.
-
-SPECIAL ATTENTION FOR COMMON PHRASES:
-- "What are the benefits of [Category]?" MUST be translated (e.g., "ما هي فوائد التكنولوجيا؟" for Arabic)
-- "How long does it take..." MUST be translated  
-- "What's the most common mistake..." MUST be translated
-- "Do I need professional help..." MUST be translated
-- ALL question patterns MUST be translated completely
-
-NO EXCEPTIONS: Every line starting with "### " MUST be in ${targetLang}, not English.`;
-  
-  // Convert JSON back to natural text for translation
-  const sourceText = `# ${masterJson.title}
-
-**Meta Description:** ${masterJson.metaDescription}
-
-## Introduction
-${masterJson.intro}
-
-${masterJson.sections.map(s => `## ${s.heading}\n${s.body}`).join('\n\n')}
-
-## Frequently Asked Questions
-
-${masterJson.faq.map(f => `### ${f.q}\n${f.a}`).join('\n\n')}
-
-## Key Takeaways
-${masterJson.summary}
-
-**Keywords:** ${masterJson.keywords.join(', ')}
-**Recommended Reading:** 
-${masterJson.externalLinks.map(link => {
-    if (link.url) {
-      return `- [${link.anchor}](${link.url})`;
-    } else {
-      return `- ${link.anchor}`;
-    }
-  }).join('\n')}`;
-
-  const user = `Translate the following markdown article to ${targetLang}.
-
-• KEEP markdown markers (#, ##, ###) exactly where they are.
-• KEEP the line "## Frequently Asked Questions" in English.
-• KEEP any label wrapped by double asterisks (e.g., **Meta Description:**) in English.
-• Translate all other text (including headings after the markers) naturally and idiomatically.
-• Preserve line breaks, lists, and overall structure. Do not add or remove sections.
-• CRITICAL: Preserve all \n (newline) characters for proper paragraph spacing - do not merge paragraphs.
-• Maintain the exact paragraph structure with newlines between paragraphs.
-
-Begin your output with the existing markdown title line translated.
-
-ARTICLE TO TRANSLATE:
-
-${sourceText}`;
-
-  return { system, user };
-}
-
-function countWords(text) {
-  return String(text || '')
-    .split(/\s+/)
-    .filter(Boolean).length;
 }
 
 // Remove code fences and inline code blocks to extract plain text
@@ -812,21 +401,7 @@ function evaluateMasterQuality(masterJson) {
   };
 }
 
-function buildMasterExpansionPrompt(categoryName, masterJson) {
-  const system = `You are an expert SEO writer. Expand content to meet strict length and structure requirements. Output ONLY valid JSON.`;
-  const user = `Expand the following master article JSON for category "${categoryName}" to satisfy ALL constraints:
-- Total words >= 2000 (intro + sections + FAQ answers).
-- Intro >= 200 words.
-- Each section body >= 400-500 words with rich details, data, examples, tips, case studies, and future trends.
-- FAQ: 8-10 entries; each answer >= 100-150 words.
-- Include keywords (15-25 items) and extrnalLinks (8-12 items with ascii slugSuggestion) and 5-10 credible sourceUrls (avoid example.com).
-- Keep tone authoritative and practical; preserve JSON schema and fields.
-- Do not include any text outside JSON.
 
-INPUT JSON:
-${JSON.stringify(masterJson)}`;
-  return { system, user };
-}
 
 function canonicalForSlug(slug) {
   const base = String(config.seo.canonicalBaseUrl || '').replace(/\/+$/, '');
@@ -995,9 +570,36 @@ async function getCategories() {
 }
 
 function estimateReadingTimeMinutes(text) {
-  const words = (text || '').split(/\s+/).filter(Boolean).length;
+  const words = countWords(text);
   const minutes = Math.max(1, Math.round(words / 200));
   return minutes;
+}
+
+function validateWordCount(content, minWords = 600, maxWords = 800) {
+  const wordCount = countWords(content);
+  return {
+    wordCount,
+    isValid: wordCount >= minWords && wordCount <= maxWords,
+    minWords,
+    maxWords,
+    status: wordCount < minWords ? 'too_short' : wordCount > maxWords ? 'too_long' : 'valid'
+  };
+}
+
+function addWordCountToArticle(articleObject, contentHtml, categorySlug) {
+  const wordValidation = validateWordCount(contentHtml, 600, 800);
+  genLog('Word count validation', { 
+    category: categorySlug, 
+    wordCount: wordValidation.wordCount,
+    status: wordValidation.status,
+    target: `${wordValidation.minWords}-${wordValidation.maxWords}` 
+  });
+  
+  return {
+    ...articleObject,
+    word_count: wordValidation.wordCount,
+    word_count_status: wordValidation.status,
+  };
 }
 
 function assembleHtml(master) {
@@ -1109,8 +711,8 @@ function appendJsonLd(html, ldArray) {
   return `${html}\n<script type="application/ld+json">${json}</script>`;
 }
 
-async function createMasterArticle(category, { preferWebSearch = config.oneMinAI.enableWebSearch } = {}) {
-  const { system, user } = buildMasterPrompt(category.name);
+async function createMasterArticle(category, { preferWebSearch = false } = {}) {
+  const { system, user } = getPrompt('master', category.name);
   genLog('AI master start (natural text)', { category: category.slug });
   const tMasterStart = Date.now();
   
@@ -1171,7 +773,7 @@ async function createMasterArticle(category, { preferWebSearch = config.oneMinAI
   
   const readingTime = estimateReadingTimeMinutes(contentHtml);
 
-  const masterArticle = {
+  let masterArticle = {
     title,
     slug: slugBase,
     content: contentHtml,
@@ -1192,6 +794,9 @@ async function createMasterArticle(category, { preferWebSearch = config.oneMinAI
     // content_hash will be added after final content is assembled
   };
 
+  // Add word count validation to article structure
+  masterArticle = addWordCountToArticle(masterArticle, contentHtml, category.slug);
+
   // Append JSON-LD schema
   const masterLd = buildArticleJsonLd({
     masterJson,
@@ -1211,7 +816,7 @@ async function createMasterArticle(category, { preferWebSearch = config.oneMinAI
 }
 
 async function createHowToArticle(category, { preferWebSearch = false } = {}) {
-  const { system, user } = buildHowToPrompt(category.name);
+  const { system, user } = getPrompt('how_to', category.name);
   genLog('AI how-to start (natural text)', { category: category.slug });
   const tHowToStart = Date.now();
   
@@ -1272,7 +877,7 @@ async function createHowToArticle(category, { preferWebSearch = false } = {}) {
   
   const readingTime = estimateReadingTimeMinutes(contentHtml);
 
-  const howToArticle = {
+  let howToArticle = {
     title,
     slug: slugBase,
     content: contentHtml,
@@ -1293,6 +898,9 @@ async function createHowToArticle(category, { preferWebSearch = false } = {}) {
     // content_hash will be added after final content is assembled
   };
 
+  // Add word count validation to article structure
+  howToArticle = addWordCountToArticle(howToArticle, contentHtml, category.slug);
+
   // Append JSON-LD schema
   const howToLd = buildArticleJsonLd({
     masterJson: howToJson,
@@ -1309,6 +917,230 @@ async function createHowToArticle(category, { preferWebSearch = false } = {}) {
   trackSuccess();
 
   return { howToArticle, howToJson };
+}
+
+async function createBestOfArticle(category, { preferWebSearch = false } = {}) {
+  const { system, user } = getPrompt('best_of', category.name);
+  genLog('AI best-of start', { category: category.slug });
+  const tStart = Date.now();
+
+  const ai = await generateRobustArticle({ system, user, preferWebSearch });
+
+  genLog('AI best-of done', { category: category.slug, ms: Date.now() - tStart });
+
+  const extracted = extractFromNaturalText(ai.content, category.name);
+
+  const bestOfJson = {
+    title: extracted.title,
+    metaTitle: extracted.title.length <= 60 ? extracted.title : extracted.title.slice(0, 57) + '...',
+    metaDescription: extracted.metaDescription,
+    intro: extracted.intro,
+    sections: extracted.sections,
+    faq: extracted.faq,
+    keywords: extracted.keywords,
+    externalLinks: extracted.externalLinks,
+    summary: extracted.summary,
+    sourceUrls: [],
+    category: category.name,
+  };
+
+  const title = bestOfJson.title;
+  const slugBase = await generateUniqueSlug(toSlug(title));
+  let contentHtml = sanitizeHtmlContent(assembleHtml(bestOfJson));
+  const summary = bestOfJson.summary;
+  const metaTitle = bestOfJson.metaTitle;
+  const metaDescription = bestOfJson.metaDescription;
+  const canonicalUrl = canonicalForSlug(slugBase);
+
+  const imageUrl = await fetchUnsplashImageUrl(title);
+  const readingTime = estimateReadingTimeMinutes(contentHtml);
+
+  let bestOfArticle = {
+    title,
+    slug: slugBase,
+    content: contentHtml,
+    summary,
+    language_code: 'en',
+    category_id: category.id,
+    image_url: imageUrl,
+    meta_title: metaTitle,
+    meta_description: metaDescription,
+    canonical_url: canonicalUrl,
+    reading_time_minutes: readingTime,
+    ai_model: ai.model,
+    ai_prompt: user,
+    ai_tokens_input: ai.usage?.prompt_tokens || 0,
+    ai_tokens_output: ai.usage?.completion_tokens || 0,
+    total_tokens: ai.usage?.total_tokens || 0,
+    source_url: null,
+  };
+
+  // Add word count validation to article structure
+  bestOfArticle = addWordCountToArticle(bestOfArticle, contentHtml, category.slug);
+
+  const bestOfLd = buildArticleJsonLd({
+    masterJson: bestOfJson,
+    title,
+    description: metaDescription,
+    canonicalUrl,
+    imageUrl,
+    languageCode: 'en',
+  });
+  bestOfArticle.content = appendJsonLd(bestOfArticle.content, bestOfLd);
+  bestOfArticle.content_hash = computeHash(bestOfArticle.content + title);
+
+  trackSuccess();
+
+  return { bestOfArticle, bestOfJson };
+}
+
+async function createCompareArticle(category, { preferWebSearch = false } = {}) {
+  const { system, user } = getPrompt('compare', category.name);
+  genLog('AI compare start', { category: category.slug });
+  const tStart = Date.now();
+
+  const ai = await generateRobustArticle({ system, user, preferWebSearch });
+
+  genLog('AI compare done', { category: category.slug, ms: Date.now() - tStart });
+
+  const extracted = extractFromNaturalText(ai.content, category.name);
+
+  const compareJson = {
+    title: extracted.title,
+    metaTitle: extracted.title.length <= 60 ? extracted.title : extracted.title.slice(0, 57) + '...',
+    metaDescription: extracted.metaDescription,
+    intro: extracted.intro,
+    sections: extracted.sections,
+    faq: extracted.faq,
+    keywords: extracted.keywords,
+    externalLinks: extracted.externalLinks,
+    summary: extracted.summary,
+    sourceUrls: [],
+    category: category.name,
+  };
+
+  const title = compareJson.title;
+  const slugBase = await generateUniqueSlug(toSlug(title));
+  let contentHtml = sanitizeHtmlContent(assembleHtml(compareJson));
+  const summary = compareJson.summary;
+  const metaTitle = compareJson.metaTitle;
+  const metaDescription = compareJson.metaDescription;
+  const canonicalUrl = canonicalForSlug(slugBase);
+
+  const imageUrl = await fetchUnsplashImageUrl(title);
+  const readingTime = estimateReadingTimeMinutes(contentHtml);
+
+  let compareArticle = {
+    title,
+    slug: slugBase,
+    content: contentHtml,
+    summary,
+    language_code: 'en',
+    category_id: category.id,
+    image_url: imageUrl,
+    meta_title: metaTitle,
+    meta_description: metaDescription,
+    canonical_url: canonicalUrl,
+    reading_time_minutes: readingTime,
+    ai_model: ai.model,
+    ai_prompt: user,
+    ai_tokens_input: ai.usage?.prompt_tokens || 0,
+    ai_tokens_output: ai.usage?.completion_tokens || 0,
+    total_tokens: ai.usage?.total_tokens || 0,
+    source_url: null,
+  };
+
+  // Add word count validation to article structure
+  compareArticle = addWordCountToArticle(compareArticle, contentHtml, category.slug);
+
+  const compareLd = buildArticleJsonLd({
+    masterJson: compareJson,
+    title,
+    description: metaDescription,
+    canonicalUrl,
+    imageUrl,
+    languageCode: 'en',
+  });
+  compareArticle.content = appendJsonLd(compareArticle.content, compareLd);
+  compareArticle.content_hash = computeHash(compareArticle.content + title);
+
+  trackSuccess();
+
+  return { compareArticle, compareJson };
+}
+
+async function createTrendsArticle(category, { preferWebSearch = false } = {}) {
+  const { system, user } = getPrompt('trends', category.name);
+  genLog('AI trends start', { category: category.slug });
+  const tStart = Date.now();
+
+  const ai = await generateRobustArticle({ system, user, preferWebSearch });
+  genLog('AI trends done', { category: category.slug, ms: Date.now() - tStart });
+
+  const extracted = extractFromNaturalText(ai.content, category.name);
+
+  const trendsJson = {
+    title: extracted.title,
+    metaTitle: extracted.title.length <= 60 ? extracted.title : extracted.title.slice(0, 57) + '...',
+    metaDescription: extracted.metaDescription,
+    intro: extracted.intro,
+    sections: extracted.sections,
+    faq: extracted.faq,
+    keywords: extracted.keywords,
+    externalLinks: extracted.externalLinks,
+    summary: extracted.summary,
+    sourceUrls: [],
+    category: category.name,
+  };
+
+  const title = trendsJson.title;
+  const slugBase = await generateUniqueSlug(toSlug(title));
+  let contentHtml = sanitizeHtmlContent(assembleHtml(trendsJson));
+  const summary = trendsJson.summary;
+  const metaTitle = trendsJson.metaTitle;
+  const metaDescription = trendsJson.metaDescription;
+  const canonicalUrl = canonicalForSlug(slugBase);
+
+  const imageUrl = await fetchUnsplashImageUrl(title);
+  const readingTime = estimateReadingTimeMinutes(contentHtml);
+
+  let trendsArticle = {
+    title,
+    slug: slugBase,
+    content: contentHtml,
+    summary,
+    language_code: 'en',
+    category_id: category.id,
+    image_url: imageUrl,
+    meta_title: metaTitle,
+    meta_description: metaDescription,
+    canonical_url: canonicalUrl,
+    reading_time_minutes: readingTime,
+    ai_model: ai.model,
+    ai_prompt: user,
+    ai_tokens_input: ai.usage?.prompt_tokens || 0,
+    ai_tokens_output: ai.usage?.completion_tokens || 0,
+    total_tokens: ai.usage?.total_tokens || 0,
+    source_url: null,
+  };
+
+  // Add word count validation to article structure
+  trendsArticle = addWordCountToArticle(trendsArticle, contentHtml, category.slug);
+
+  const trendsLd = buildArticleJsonLd({
+    masterJson: trendsJson,
+    title,
+    description: metaDescription,
+    canonicalUrl,
+    imageUrl,
+    languageCode: 'en',
+  });
+  trendsArticle.content = appendJsonLd(trendsArticle.content, trendsLd);
+  trendsArticle.content_hash = computeHash(trendsArticle.content + title);
+
+  trackSuccess();
+
+  return { trendsArticle, trendsJson };
 }
 
 async function generateTranslationArticle({ lang, category, masterJson, slugBase, title, summary, imageUrl }) {
@@ -1664,6 +1496,6 @@ export async function runGenerationBatch() {
 }
 
 // Named export for on-demand generation endpoints
-export { createMasterArticle, createHowToArticle, generateTranslationArticle, extractFromNaturalText, insertArticle, updateDailyTokenUsage, incrementJobCount };
+export { createMasterArticle, createHowToArticle, createBestOfArticle, createCompareArticle, createTrendsArticle, generateTranslationArticle, extractFromNaturalText, insertArticle, updateDailyTokenUsage, incrementJobCount };
 
 

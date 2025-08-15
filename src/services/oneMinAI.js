@@ -46,10 +46,24 @@ function _rotateApiKey(err) {
 
 // ---------------------------------------------------------------------------
 
-function combinePrompts(system, user) {
+function combinePrompts(system, user, enableWebSearch = false) {
   // Combine system and user prompts since 1min.ai doesn't use messages array
   const parts = [];
   if (system) parts.push(`System: ${system}`);
+  
+  // Add web search instructions when enabled
+  if (enableWebSearch) {
+    parts.push(`CRITICAL WEB SEARCH INSTRUCTIONS: When using web search, ONLY focus on:
+- Content published in the last 30 days (2024)
+- Current trending topics and breaking news
+- Latest updates, announcements, and developments
+- Recent statistics, data, and research findings
+- Today's best practices and methods
+- Ignore any outdated information or old news
+- Prioritize information from reliable, current sources
+- Focus on what's happening NOW, not historical content`);
+  }
+  
   if (user) parts.push(`User: ${user}`);
   return parts.join('\n\n');
 }
@@ -59,7 +73,7 @@ function buildRequestBody({ system, user, enableWebSearch = false, model }) {
     type: "CHAT_WITH_AI",
     model: model || config.oneMinAI.defaultModel,
     promptObject: {
-      prompt: combinePrompts(system, user),
+      prompt: combinePrompts(system, user, enableWebSearch),
       ...(enableWebSearch
         ? {
             webSearch: true,

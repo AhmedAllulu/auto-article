@@ -2,18 +2,33 @@ import axios from 'axios';
 import { config } from '../config.js';
 import { query } from '../db.js';
 
-// Check if an image URL already exists in the database
-async function isImageUrlUsed(imageUrl) {
-  if (!imageUrl) return false;
+// Normalize URL by stripping query parameters (anything after '?')
+function normalizeUrl(url = '') {
+  return url.split('?')[0];
+}
+
+// Check if an Unsplash photo (by base URL or photo ID) is already used
+async function isUnsplashPhotoUsed({ baseUrl, photoId }) {
   try {
-    const result = await query(
-      'SELECT 1 FROM articles WHERE image_url = $1 LIMIT 1',
-      [imageUrl]
-    );
-    return result.rows.length > 0;
+    // Prefer searching by photoId if provided (more robust)
+    if (photoId) {
+      const res = await query(
+        'SELECT 1 FROM articles WHERE image_url LIKE $1 LIMIT 1',
+        [`%${photoId}%`]
+      );
+      if (res.rows.length > 0) return true;
+    }
+    if (baseUrl) {
+      const res2 = await query(
+        'SELECT 1 FROM articles WHERE image_url LIKE $1 LIMIT 1',
+        [`${baseUrl}%`]
+      );
+      return res2.rows.length > 0;
+    }
+    return false;
   } catch (err) {
-    console.error('Error checking image URL:', err);
-    return false; // In case of error, assume not used to avoid blocking
+    console.error('Error checking Unsplash photo usage:', err);
+    return false;
   }
 }
 
@@ -33,7 +48,7 @@ export async function fetchUnsplashImageUrl(query_param) {
     for (const photo of results) {
       const imageUrl = photo?.urls?.regular || photo?.urls?.full;
       if (imageUrl) {
-        const isUsed = await isImageUrlUsed(imageUrl);
+        const isUsed = await isUnsplashPhotoUsed({ baseUrl: normalizeUrl(imageUrl), photoId: photo?.id });
         if (!isUsed) {
           return imageUrl;
         }
