@@ -45,7 +45,26 @@ export const config = {
   port: Number(process.env.PORT || 3322),
   databaseUrl: process.env.DATABASE_URL,
   oneMinAI: {
-    apiKey: process.env.ONE_MIN_AI_API_KEY || '',
+    // Support multiple API keys for rotation: ONE_MIN_AI_API_KEY, ONE_MIN_AI_API_KEY_1, _2, _3...
+    // Collect all keys in order, starting with unsuffixed then numeric suffix ascending
+    apiKeys: (() => {
+      const keys = [];
+      // First, include unsuffixed key if provided
+      if (process.env.ONE_MIN_AI_API_KEY) keys.push(process.env.ONE_MIN_AI_API_KEY);
+      // Then collect sequentially numbered keys ONE_MIN_AI_API_KEY_1, _2, ...
+      let idx = 1;
+      while (true) {
+        const val = process.env[`ONE_MIN_AI_API_KEY_${idx}`];
+        if (!val) break;
+        keys.push(val);
+        idx += 1;
+      }
+      return keys.filter((k) => typeof k === 'string' && k.trim().length > 0);
+    })(),
+    // Preserve legacy single-key accessors for compatibility (first key or empty string)
+    get apiKey() {
+      return this.apiKeys[0] || '';
+    },
     baseUrl: process.env.ONE_MIN_AI_BASE_URL || 'https://api.1min.ai',  // Updated base URL
     defaultModel: process.env.AI_DEFAULT_TEXT_MODEL || 'gpt-4o-mini',
     fallbackModel: process.env.AI_FALLBACK_MODEL || 'mistral-nemo',
@@ -54,6 +73,28 @@ export const config = {
     // Controls length and breadth when web search is enabled
     webSearchMaxWords: Number(process.env.AI_WEBSEARCH_MAX_WORDS || 1200),
     webSearchNumSites: Number(process.env.AI_WEBSEARCH_NUM_SITES || 2),
+  },
+
+  // ------------------------ OPENAI (used for translations) ------------------
+  openAI: {
+    // Support multiple API keys: OPENAI_API_KEY, OPENAI_API_KEY_1, _2, ...
+    apiKeys: (() => {
+      const keys = [];
+      if (process.env.OPENAI_API_KEY) keys.push(process.env.OPENAI_API_KEY);
+      let idx = 1;
+      while (true) {
+        const val = process.env[`OPENAI_API_KEY_${idx}`];
+        if (!val) break;
+        keys.push(val);
+        idx += 1;
+      }
+      return keys.filter((k) => typeof k === 'string' && k.trim().length > 0);
+    })(),
+    get apiKey() {
+      return this.apiKeys[0] || '';
+    },
+    baseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com',
+    defaultModel: process.env.OPENAI_DEFAULT_MODEL || 'gpt-3.5-turbo',
   },
   generation: {
     enabled: String(process.env.ENABLE_GENERATION) === 'true',

@@ -1,10 +1,8 @@
 import swaggerJSDoc from 'swagger-jsdoc';
 import { config } from '../config.js';
 
-const servers = [];
-if (config.seo?.canonicalBaseUrl) {
-  servers.push({ url: config.seo.canonicalBaseUrl });
-}
+const servers = ['https://chato-app.com'];
+
 servers.push({ url: `http://localhost:${config.port}` });
 
 const options = {
@@ -21,6 +19,7 @@ const options = {
       { name: 'Health', description: 'Service health endpoints' },
       { name: 'Categories', description: 'Browse and query categories' },
       { name: 'Articles', description: 'Browse and query articles' },
+      { name: 'Generation', description: 'On-demand content generation endpoints' },
     ],
     components: {
       schemas: {

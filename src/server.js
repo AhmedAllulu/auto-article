@@ -10,6 +10,8 @@ import swaggerUi from 'swagger-ui-express';
 import { config, isProduction } from './config.js';
 import categoriesRoute from './routes/categories.js';
 import articlesRoute from './routes/articles.js';
+import jobsRoute from './routes/jobs.js';
+import manualGenerateRoute from './routes/manualGenerate.js';
 import { runGenerationBatch } from './services/generation.js';
 import seoRoute from './routes/seo.js';
 import { query } from './db.js';
@@ -53,6 +55,8 @@ app.get('/health', async (req, res) => {
 
 app.use('/categories', categoriesRoute);
 app.use('/articles', articlesRoute);
+app.use('/jobs', jobsRoute);
+app.use('/generate', manualGenerateRoute);
 app.use('/', seoRoute);
 
 // OpenAPI/Swagger endpoints

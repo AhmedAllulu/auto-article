@@ -4,6 +4,8 @@ import { config } from '../config.js';
 import { toSlug } from '../utils/slug.js';
 import { fetchUnsplashImageUrl } from './unsplash.js';
 import { generateArticleWithSearch, generateNoSearch, generateRobustArticle } from './oneMinAI.js';
+import { chatCompletion as openAIChat } from './openAI.js';
+import sanitizeHtml from 'sanitize-html';
 
 // Debug logging for generation flow (enable with DEBUG_GENERATION=true)
 const DEBUG_GENERATION = String(process.env.DEBUG_GENERATION || 'false') === 'true';
@@ -43,62 +45,171 @@ function computeHash(text) {
   return crypto.createHash('sha256').update(text).digest('hex');
 }
 
+function sanitizeHtmlContent(html) {
+  // Strip scripts/styles and dangerous attributes but keep headings, links, images, lists, etc.
+  return sanitizeHtml(String(html || ''), {
+    allowedTags: sanitizeHtml.defaults.allowedTags.concat(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li']),
+    allowedAttributes: {
+      a: ['href', 'name', 'target', 'rel'],
+      img: ['src', 'alt'],
+    },
+    allowedSchemes: ['http', 'https', 'mailto'],
+  });
+}
+
+// Ensure uniqueness of article slugs by appending an incrementing numeric suffix when needed
+async function generateUniqueSlug(baseSlug) {
+  const res = await query(
+    'SELECT slug FROM articles WHERE slug LIKE $1 || \'%\'',
+    [baseSlug]
+  );
+  const existing = new Set(res.rows.map((r) => r.slug));
+  if (!existing.has(baseSlug)) return baseSlug;
+  let counter = 2;
+  while (existing.has(`${baseSlug}-${counter}`)) counter += 1;
+  return `${baseSlug}-${counter}`;
+}
+
 function buildMasterPrompt(categoryName) {
-  const system = `You are an expert SEO content writer. Write comprehensive, well-structured articles in natural markdown format. When web search is available, use it to identify trending subtopics and current data.`;
+  // Enhanced human-centered, high-engagement SEO prompt
+  const system = `You are an expert SEO content writer specializing in human-centered, engaging content that ranks well and drives real engagement. Your articles connect with real people facing real problems while optimizing for both search engines and social sharing.`;
 
-  const user = `Write a comprehensive, SEO-optimized article for the category "${categoryName}".
+  const user = `Write a comprehensive, people-first SEO article for the category "${categoryName}".
 
-Before writing, silently do:
-- Identify 5-8 trending subtopics within ${categoryName} from the last 30-90 days (use web search if available)
-- Select ONE best topic with the highest SEO opportunity (rising trend, high intent, moderate competition)
-- Base the entire article on the chosen topic. Do NOT include your research notes in the output. Only output the article starting with the title.
+RESEARCH PHASE (do silently, don't show research):
+- Use web search to identify 5-8 trending subtopics within ${categoryName} from the Today's Trending Topics
+- Find current pain points, questions, and trending discussions on Reddit, forums, and social media
+- Identify ONE topic with: high user intent + rising search volume + emotional engagement potential
+- Research top 3 competing articles to identify content gaps and improvement opportunities
 
-SEO guidance to apply while writing:
-- Target a clear primary keyword and 8-12 secondary keywords and entities; weave them naturally
-- Reflect current SERP intent (informational/commercial) and cover People Also Ask style questions
-- Include practical examples, recent stats, and credible references (no placeholders) where appropriate
+HUMAN-CENTERED APPROACH:
+- Write for a specific persona: someone actively searching for this information RIGHT NOW
+- Address their emotional state (frustrated? curious? overwhelmed? excited?)
+- Use "you" language and speak directly to the reader
+- Include relatable scenarios, analogies, and real-world examples
+- Balance expert authority with approachable, conversational tone
 
-Structure your response as natural markdown with:
+SEO OPTIMIZATION STRATEGY:
+- Target 1 primary keyword + 10-15 semantic keywords naturally woven throughout
+- Structure for featured snippets and People Also Ask boxes
+- Optimize for voice search with natural question phrasing
+- Include current data, trends, and timely references
+- Add engagement hooks: surprising facts, controversial takes, or bold predictions
 
-# Main Article Title (compelling and SEO-friendly)
+ENGAGEMENT BOOSTERS:
+- Start with a hook that makes people stop scrolling
+- Include "aha moments" and actionable insights every 200-300 words
+- Use emotional triggers: fear of missing out, desire for improvement, problem-solving relief
+- Add social proof through real examples, case studies, or user testimonials
+- Create shareable quotes or key insights formatted for social media
 
-**Meta Description:** Write a 150-160 character meta description here.
+Structure your response as:
 
-## Introduction
-Write a detailed 200+ word introduction explaining the topic's importance, current trends, and what readers will learn.
+# Compelling Title That Promises Value (include primary keyword + emotional hook)
 
-## Section 1: [Descriptive Heading]
-Write 400+ words of detailed content with examples, statistics, best practices, and actionable insights.
+**Meta Description:** 150-160 characters that create curiosity and promise specific benefits
 
-## Section 2: [Another Heading] 
-Write 400+ words covering different aspects with case studies, data, and practical tips.
+## Introduction (250-300 words)
+- Open with a relatable scenario or surprising statistic
+- Acknowledge the reader's pain point or goal
+- Preview the specific value they'll get
+- Include a bold statement or promise about what they'll achieve
 
-## Section 3: [Third Heading]
-Continue with 400+ words of valuable content.
+## The Real Problem Most People Face
+Write 400+ words identifying common mistakes, misconceptions, or challenges people have with ${categoryName}. Make readers think "Yes, that's exactly my situation!"
 
-[Continue with 2-3 more sections...]
+## What Actually Works: [Data-Driven Solution Title]
+Write 400+ words with proven strategies, backed by recent data and real examples. Include specific steps, tools, or frameworks.
+
+## Advanced Strategies for [Specific Benefit]
+Write 400+ words covering advanced techniques with case studies, expert insights, and measurable outcomes.
+
+## Common Mistakes That Kill Results
+Write 400+ words highlighting pitfalls to avoid, with explanations of why these mistakes happen and how to prevent them.
+
+## Step-by-Step Implementation Guide
+Write 400+ words with a clear, actionable roadmap readers can follow immediately.
+
+## Real Results: What to Expect
+Write 300+ words setting realistic expectations, timelines, and success metrics.
 
 ## Frequently Asked Questions
 
-### Question 1: What are the key benefits of ${categoryName}?
-Provide a detailed 100+ word answer with practical insights.
+### What's the #1 mistake beginners make with ${categoryName}?
+Provide specific, actionable answer in 120+ words.
 
-### Question 2: How do I get started with ${categoryName}?
-Give comprehensive guidance in 100+ words.
+### How long does it take to see results with ${categoryName}?
+Give realistic timelines with factors that influence speed in 120+ words.
 
-[Continue with 6-8 more FAQ items...]
+### Is ${categoryName} worth it for [specific user type]?
+Address specific audience concerns in 120+ words.
+
+### What tools/resources do I need to get started?
+List specific, practical recommendations in 120+ words.
+
+### How do I know if I'm doing ${categoryName} correctly?
+Provide measurable indicators and checkpoints in 120+ words.
+
+### What's the most cost-effective approach to ${categoryName}?
+Balance budget considerations with effectiveness in 120+ words.
+
+### How does ${categoryName} compare to [popular alternative]?
+Honest comparison with pros/cons in 120+ words.
+
+### What should I do if ${categoryName} isn't working for me?
+Troubleshooting steps and alternative approaches in 120+ words.
 
 ## Key Takeaways
-Summarize the main points in 2-3 sentences.
+- 5-7 bullet points summarizing the most important, actionable insights
+- Each point should be specific and memorable
 
-**Keywords:** Provide 15-25 items mixing the primary keyword and related entities
-**Related Topics:** topic1, topic2, topic3
-**Recommended Reading:** 
-- Link text for external article 1
-- Link text for external article 2
-- Link text for external article 3
+## Take Action Now
+Write a compelling 100-word section motivating immediate action with specific next steps.
 
-Write naturally and comprehensively. Aim for 2000+ total words with expert-level depth and practical value.`;
+**Primary Keyword:** [main target keyword]
+**Secondary Keywords:** [15-20 related terms and entities]
+**Content Pillars:** [3-4 main themes covered]
+**Target Audience:** [specific persona description]
+**Content Goals:** [engagement metric targets]
+**Social Hooks:** [2-3 shareable quotes or statistics]
+
+**Recommended External Reading:**
+- [Link Text 1](https://example.com/external-url-1)
+- [Link Text 2](https://example.com/external-url-2)
+- [Link Text 3](https://example.com/external-url-3)
+
+WRITING STYLE REQUIREMENTS:
+- Use transition words and varied sentence lengths for readability
+- Include power words that trigger emotional responses
+- Write in active voice with strong, definitive statements
+- Balance data/facts with stories and analogies
+- Aim for 8th-grade reading level while maintaining expertise
+- Include 3-5 high-quality external links to authoritative sources (NOT internal website links)
+- Use markdown format for external links: [Link Text](https://actual-external-url.com)
+- Link to reputable sources like industry publications, research studies, government sites, or well-known experts
+- End sections with cliffhangers or curiosity gaps when possible
+
+PARAGRAPH FORMATTING REQUIREMENTS:
+- CRITICAL: Use \n (newline character) to create proper spacing between paragraphs
+- Write short, digestible paragraphs of 2-4 sentences each
+- Add \n between every paragraph to improve readability and structure
+- Never write long blocks of text without paragraph breaks
+- Each paragraph should focus on one main point or idea
+- Use \n to separate ideas and create visual breathing room for readers
+- Example format:
+  
+  First paragraph about one specific point.\n
+  Second paragraph starting a new idea with proper spacing.\n
+  Third paragraph continuing with clear separation using newlines.
+
+EXTERNAL LINKING REQUIREMENTS:
+- Only include links to external websites (never internal links to your own site)
+- Use full URLs starting with https://
+- Link to authoritative sources that add genuine value to readers
+- Examples of good external links: industry reports, research studies, expert blogs, government data, case studies
+- Format all external links in markdown: [Descriptive Link Text](https://external-domain.com/page)
+
+Target: 2500+ words with maximum engagement and shareability while maintaining SEO best practices.`;
 
   return { system, user };
 }
@@ -134,7 +245,7 @@ function extractFromNaturalText(content, categoryName) {
     sections: [],
     faq: [],
     keywords: [],
-    internalLinks: [],
+    externalLinks: [],
     summary: null
   };
 
@@ -166,14 +277,14 @@ function extractFromNaturalText(content, categoryName) {
       continue;
     }
 
-    // Detect FAQ section
-    if (line.match(/^##\s+.*(?:faq|frequently|questions)/i)) {
+    // Detect FAQ section (supports English and Arabic heading variants)
+    if (line.match(/^##\s+.*(?:faq|frequently|questions|الأسئلة)/i)) {
       inFaq = true;
       collectingIntro = false;
       if (currentSection && currentContent.length) {
         result.sections.push({
           heading: currentSection,
-          body: currentContent.join(' ').trim()
+          body: currentContent.join('\n').trim()
         });
       }
       currentSection = null;
@@ -185,12 +296,12 @@ function extractFromNaturalText(content, categoryName) {
     if (line.match(/^##\s+(.+)$/)) {
       // Save previous section
       if (collectingIntro) {
-        result.intro = currentContent.join(' ').trim();
+        result.intro = currentContent.join('\n').trim();
         collectingIntro = false;
       } else if (currentSection && currentContent.length) {
         result.sections.push({
           heading: currentSection,
-          body: currentContent.join(' ').trim()
+          body: currentContent.join('\n').trim()
         });
       }
       
@@ -205,7 +316,7 @@ function extractFromNaturalText(content, categoryName) {
       if (currentQuestion && currentContent.length) {
         result.faq.push({
           q: currentQuestion,
-          a: currentContent.join(' ').trim()
+          a: currentContent.join('\n').trim()
         });
       }
       currentQuestion = line.replace(/^###\s+/, '').trim();
@@ -220,16 +331,32 @@ function extractFromNaturalText(content, categoryName) {
       continue;
     }
 
-    // Extract recommended reading/internal links
-    if (line.match(/^\*\*Recommended Reading:\*\*/i)) {
-      // Look for following lines with - Link text
+    // Extract recommended reading/external links
+    if (line.match(/^\*\*Recommended.*Reading:\*\*/i)) {
+      // Look for following lines with markdown links: - [Text](URL)
       for (let j = i + 1; j < lines.length && lines[j].match(/^-\s+(.+)$/); j++) {
-        const linkText = lines[j].replace(/^-\s+/, '').trim();
-        const slug = toSlug(linkText);
-        result.internalLinks.push({
-          anchor: linkText,
-          slugSuggestion: slug
-        });
+        const linkLine = lines[j].replace(/^-\s+/, '').trim();
+        
+        // Parse markdown link format: [Link Text](https://url.com)
+        const markdownMatch = linkLine.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+        if (markdownMatch) {
+          const [, linkText, url] = markdownMatch;
+          // Only include if it's a real external URL
+          if (url.startsWith('http://') || url.startsWith('https://')) {
+            result.externalLinks.push({
+              anchor: linkText.trim(),
+              url: url.trim()
+            });
+          }
+        } else {
+          // Fallback: if no markdown format, treat as plain text (for backward compatibility)
+          const linkText = linkLine;
+          const slug = toSlug(linkText);
+          result.externalLinks.push({
+            anchor: linkText,
+            slugSuggestion: slug
+          });
+        }
         i = j; // Skip these lines in main loop
       }
       continue;
@@ -251,6 +378,11 @@ function extractFromNaturalText(content, categoryName) {
     }
 
     // Collect content for current section
+    // Preserve blank lines to maintain paragraph spacing
+    if (line === '') {
+      currentContent.push('');
+      continue;
+    }
     if (line.trim() && !line.match(/^\*\*|^#/)) {
       currentContent.push(line.trim());
     }
@@ -258,17 +390,17 @@ function extractFromNaturalText(content, categoryName) {
 
   // Finalize remaining content
   if (collectingIntro) {
-    result.intro = currentContent.join(' ').trim();
+    result.intro = currentContent.join('\n').trim();
   } else if (currentSection && currentContent.length) {
     result.sections.push({
       heading: currentSection,
-      body: currentContent.join(' ').trim()
+      body: currentContent.join('\n').trim()
     });
   }
   if (currentQuestion && currentContent.length) {
     result.faq.push({
       q: currentQuestion,
-      a: currentContent.join(' ').trim()
+      a: currentContent.join('\n').trim()
     });
   }
 
@@ -302,8 +434,8 @@ function extractFromNaturalText(content, categoryName) {
     result.keywords = [categoryName.toLowerCase(), 'guide', 'tips', 'best practices'];
   }
 
-  if (result.internalLinks.length === 0) {
-    result.internalLinks = [
+  if (result.externalLinks.length === 0) {
+    result.externalLinks = [
       { anchor: `${categoryName} Tips`, slugSuggestion: `${toSlug(categoryName)}-tips` },
       { anchor: `${categoryName} Guide`, slugSuggestion: `${toSlug(categoryName)}-guide` }
     ];
@@ -330,7 +462,14 @@ function extractFromNaturalText(content, categoryName) {
 }
 
 function buildTranslationPrompt(targetLang, masterJson) {
-  const system = `You are a professional translator. Translate content naturally while maintaining structure and SEO value.`;
+  const system = `You are a professional translator. Translate the article content into ${targetLang} while PRESERVING all markdown markers (#, ##, ###) and specific label phrases enclosed in double asterisks (e.g., "**Meta Description:**", "**Primary Keyword:**", etc.).
+
+Special rules:
+1. The heading line "## Frequently Asked Questions" MUST remain in English so downstream parsers detect the FAQ block.
+2. All other heading text (including the main title "# ..." and each FAQ question "### ...") SHOULD be translated normally.
+3. Do not add or remove sections and keep line-breaks intact.
+4. CRITICAL: Preserve all \n (newline) characters exactly as they appear for proper paragraph spacing.
+5. Maintain the paragraph structure and spacing - do not merge paragraphs or remove newlines.`;
   
   // Convert JSON back to natural text for translation
   const sourceText = `# ${masterJson.title}
@@ -351,15 +490,25 @@ ${masterJson.summary}
 
 **Keywords:** ${masterJson.keywords.join(', ')}
 **Recommended Reading:** 
-${masterJson.internalLinks.map(link => `- ${link.anchor}`).join('\n')}`;
+${masterJson.externalLinks.map(link => {
+    if (link.url) {
+      return `- [${link.anchor}](${link.url})`;
+    } else {
+      return `- ${link.anchor}`;
+    }
+  }).join('\n')}`;
 
-  const user = `Translate the following article to ${targetLang}. Maintain the exact same markdown structure and formatting. Keep the same headings format, FAQ structure, and keywords section.
+  const user = `Translate the following markdown article to ${targetLang}.
 
-Translate naturally while preserving:
-- SEO value and keywords (adapt to target language)
-- Technical terms appropriately
-- Cultural context for the target audience
-- All structural elements (headings, sections, FAQ format)
+• KEEP markdown markers (#, ##, ###) exactly where they are.
+• KEEP the line "## Frequently Asked Questions" in English.
+• KEEP any label wrapped by double asterisks (e.g., **Meta Description:**) in English.
+• Translate all other text (including headings after the markers) naturally and idiomatically.
+• Preserve line breaks, lists, and overall structure. Do not add or remove sections.
+• CRITICAL: Preserve all \n (newline) characters for proper paragraph spacing - do not merge paragraphs.
+• Maintain the exact paragraph structure with newlines between paragraphs.
+
+Begin your output with the existing markdown title line translated.
 
 ARTICLE TO TRANSLATE:
 
@@ -630,32 +779,55 @@ function estimateReadingTimeMinutes(text) {
 
 function assembleHtml(master) {
   const parts = [];
-  if (master.intro) parts.push(`<p>${master.intro}</p>`);
+  // Helper: split on double newline for paragraphs, keep single newline as <br/>
+  function toParagraphs(raw) {
+    if (!raw) return [];
+    const chunks = String(raw).split(/\n{2,}/g);
+    return chunks.map(chunk => `<p>${chunk.replace(/\n/g, '<br/>')}</p>`);
+  }
+  if (master.intro) parts.push(...toParagraphs(master.intro));
   if (Array.isArray(master.sections)) {
     for (const s of master.sections) {
       if (s.heading) parts.push(`<h2>${s.heading}</h2>`);
-      if (s.body) parts.push(`<p>${s.body}</p>`);
+      if (s.body) parts.push(...toParagraphs(s.body));
     }
   }
   if (Array.isArray(master.faq) && master.faq.length) {
     parts.push('<h2>FAQ</h2>');
     for (const f of master.faq) {
       parts.push(`<h3>${f.q}</h3>`);
-      parts.push(`<p>${f.a}</p>`);
+      parts.push(...toParagraphs(f.a));
     }
   }
-  if (Array.isArray(master.internalLinks) && master.internalLinks.length) {
+  if (Array.isArray(master.externalLinks) && master.externalLinks.length) {
     parts.push('<h2>Related links</h2>');
     parts.push('<ul>');
     const seen = new Set();
-    const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-    for (const link of master.internalLinks) {
+    for (const link of master.externalLinks) {
       const anchor = String(link?.anchor || '').trim();
-      const slugSuggestion = String(link?.slugSuggestion || '').trim();
-      if (!anchor || !slugRegex.test(slugSuggestion) || seen.has(slugSuggestion)) continue;
-      seen.add(slugSuggestion);
-      const href = `/${slugSuggestion}`;
-      parts.push(`<li><a href="${href}">${anchor}</a></li>`);
+      let href = '';
+      
+      // Prefer external URL if available
+      if (link?.url && (link.url.startsWith('http://') || link.url.startsWith('https://'))) {
+        href = link.url;
+      } else if (link?.slugSuggestion) {
+        // Fallback to internal link for backward compatibility
+        const slugSuggestion = String(link.slugSuggestion).trim();
+        const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+        if (slugRegex.test(slugSuggestion) && !seen.has(slugSuggestion)) {
+          href = `/${slugSuggestion}`;
+          seen.add(slugSuggestion);
+        }
+      }
+      
+      // Only add link if we have both anchor text and a valid href
+      if (anchor && href && !seen.has(href)) {
+        seen.add(href);
+        // Add target="_blank" and rel="noopener" for external links
+        const isExternal = href.startsWith('http://') || href.startsWith('https://');
+        const targetAttr = isExternal ? ' target="_blank" rel="noopener"' : '';
+        parts.push(`<li><a href="${href}"${targetAttr}>${anchor}</a></li>`);
+      }
     }
     parts.push('</ul>');
   }
@@ -714,7 +886,7 @@ function appendJsonLd(html, ldArray) {
   return `${html}\n<script type="application/ld+json">${json}</script>`;
 }
 
-async function createMasterArticle(category) {
+async function createMasterArticle(category, { preferWebSearch = config.oneMinAI.enableWebSearch } = {}) {
   const { system, user } = buildMasterPrompt(category.name);
   genLog('AI master start (natural text)', { category: category.slug });
   const tMasterStart = Date.now();
@@ -723,7 +895,7 @@ async function createMasterArticle(category) {
   const ai = await generateRobustArticle({ 
     system, 
     user, 
-    preferWebSearch: config.oneMinAI.enableWebSearch 
+    preferWebSearch 
   });
   
   genLog('AI master done', { category: category.slug, ms: Date.now() - tMasterStart });
@@ -740,7 +912,7 @@ async function createMasterArticle(category) {
     sections: extracted.sections,
     faq: extracted.faq,
     keywords: extracted.keywords,
-    internalLinks: extracted.internalLinks,
+    externalLinks: extracted.externalLinks,
     summary: extracted.summary,
     sourceUrls: [],
     category: category.name
@@ -759,8 +931,8 @@ async function createMasterArticle(category) {
 
   // Build final article
   const title = masterJson.title;
-  const slugBase = toSlug(title);
-  let contentHtml = assembleHtml(masterJson);
+  const slugBase = await generateUniqueSlug(toSlug(title));
+  let contentHtml = sanitizeHtmlContent(assembleHtml(masterJson));
   const summary = masterJson.summary;
   const metaTitle = masterJson.metaTitle;
   const metaDescription = masterJson.metaDescription;
@@ -775,7 +947,6 @@ async function createMasterArticle(category) {
   });
   
   const readingTime = estimateReadingTimeMinutes(contentHtml);
-  const contentHash = computeHash(contentHtml + title);
 
   const masterArticle = {
     title,
@@ -795,7 +966,7 @@ async function createMasterArticle(category) {
     ai_tokens_output: ai.usage?.completion_tokens || 0,
     total_tokens: ai.usage?.total_tokens || 0,
     source_url: null,
-    content_hash: contentHash,
+    // content_hash will be added after final content is assembled
   };
 
   // Append JSON-LD schema
@@ -808,6 +979,8 @@ async function createMasterArticle(category) {
     languageCode: 'en',
   });
   masterArticle.content = appendJsonLd(masterArticle.content, masterLd);
+  // Final content hash after sanitization and JSON-LD inclusion
+  masterArticle.content_hash = computeHash(masterArticle.content + title);
 
   trackSuccess();
 
@@ -818,8 +991,8 @@ async function generateTranslationArticle({ lang, category, masterJson, slugBase
   const { system: ts, user: tu } = buildTranslationPrompt(lang, masterJson);
   genLog('AI translation start', { category: category.slug, lang });
   const tTransStart = Date.now();
-  // SINGLE AI CALL for natural text translation
-  const aiT = await generateRobustArticle({ system: ts, user: tu, preferWebSearch: false });
+  // SINGLE AI CALL for natural text translation using OpenAI GPT-3.5
+  const aiT = await openAIChat({ system: ts, user: tu, model: config.openAI.defaultModel });
   genLog('AI translation done', { category: category.slug, lang, ms: Date.now() - tTransStart });
   
   // ALWAYS extract successfully (no JSON parsing)
@@ -834,7 +1007,7 @@ async function generateTranslationArticle({ lang, category, masterJson, slugBase
     sections: extracted.sections,
     faq: extracted.faq,
     keywords: extracted.keywords,
-    internalLinks: extracted.internalLinks,
+    externalLinks: extracted.externalLinks,
     summary: extracted.summary || summary,
     sourceUrls: [],
     category: category.name
@@ -842,13 +1015,13 @@ async function generateTranslationArticle({ lang, category, masterJson, slugBase
 
   // Build article (same as before)
   const tTitle = tJson.title;
-  const tSlug = `${slugBase}-${lang}`;
-  let tContent = assembleHtml(tJson);
+  const tSlug = await generateUniqueSlug(`${slugBase}-${lang}`);
+  let tContent = sanitizeHtmlContent(assembleHtml(tJson));
   const tSummary = tJson.summary;
   const tMetaTitle = tJson.metaTitle;
   const tMetaDesc = tJson.metaDescription || tSummary || '';
   const tCanonical = canonicalForSlug(tSlug);
-  const tHash = computeHash(tContent + tTitle + lang);
+  const tReadingTime = estimateReadingTimeMinutes(tContent);
 
   const tArticle = {
     title: tTitle,
@@ -861,14 +1034,14 @@ async function generateTranslationArticle({ lang, category, masterJson, slugBase
     meta_title: tMetaTitle,
     meta_description: tMetaDesc,
     canonical_url: tCanonical,
-    reading_time_minutes: estimateReadingTimeMinutes(tContent),
+    reading_time_minutes: tReadingTime,
     ai_model: aiT.model,
     ai_prompt: tu,
     ai_tokens_input: aiT.usage?.prompt_tokens || 0,
     ai_tokens_output: aiT.usage?.completion_tokens || 0,
     total_tokens: aiT.usage?.total_tokens || 0,
     source_url: null,
-    content_hash: tHash,
+    // content_hash will be added after final content is assembled
   };
 
   // Append JSON-LD schema to translation content
@@ -881,6 +1054,8 @@ async function generateTranslationArticle({ lang, category, masterJson, slugBase
     languageCode: lang,
   });
   tArticle.content = appendJsonLd(tArticle.content, tLd);
+  // Final content hash after sanitization and JSON-LD inclusion
+  tArticle.content_hash = computeHash(tArticle.content + tTitle + lang);
 
   trackSuccess();
 
@@ -996,6 +1171,12 @@ export async function runGenerationBatch() {
     for (const lang of orderedLangs) {
       if (generatedCount >= config.generation.maxBatchPerRun) break;
       if (generatedCount >= remaining) break;
+      // Skip if translation already exists for this language (safety check for restarts)
+      const translationLangs = await getExistingTranslationLanguagesForMaster(masterArticle.slug);
+      if (translationLangs.has(lang)) {
+        genLog('Translation already exists, skipping', { slug: masterArticle.slug, lang });
+        continue;
+      }
       try {
         const tArticle = await generateTranslationArticle({
           lang,
@@ -1052,7 +1233,7 @@ export async function runGenerationBatch() {
         sections: extracted.sections || [],
         faq: extracted.faq || [],
         keywords: extracted.keywords || [],
-        internalLinks: extracted.internalLinks || [],
+        externalLinks: extracted.externalLinks || [],
         summary: extracted.summary || m.summary || '',
         sourceUrls: [],
         category: category?.name || ''
@@ -1112,5 +1293,8 @@ export async function runGenerationBatch() {
   genLog('Batch done', { generatedCount });
   return { generated: generatedCount };
 }
+
+// Named export for on-demand generation endpoints
+export { createMasterArticle, insertArticle, updateDailyTokenUsage, incrementJobCount };
 
 

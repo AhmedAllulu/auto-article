@@ -1,14 +1,50 @@
 import axios from 'axios';
 import { config } from '../config.js';
 
-const http = axios.create({
-  baseURL: config.oneMinAI.baseUrl,
-  headers: {
-    'API-KEY': config.oneMinAI.apiKey,
-    'Content-Type': 'application/json',
-  },
-  timeout: 120000,
-});
+// --- API KEY ROTATION SUPPORT ---------------------------------------------
+// Collect API keys from configuration. We fall back to single key for
+// backwards-compatibility.
+const _apiKeys = (Array.isArray(config.oneMinAI.apiKeys) && config.oneMinAI.apiKeys.length)
+  ? config.oneMinAI.apiKeys
+  : [config.oneMinAI.apiKey];
+
+let _currentKeyIdx = 0;
+
+function _createHttpForKey(apiKey) {
+  return axios.create({
+    baseURL: config.oneMinAI.baseUrl,
+    headers: {
+      'API-KEY': apiKey,
+      'Content-Type': 'application/json',
+    },
+    timeout: 120000,
+  });
+}
+
+let http = _createHttpForKey(_apiKeys[_currentKeyIdx]);
+
+function _isTokenQuotaError(err) {
+  // Detect when an API key runs out of tokens / quota so we can rotate keys.
+  const status = err?.response?.status;
+  const body = err?.response?.data;
+  const bodyStr = typeof body === 'string' ? body : JSON.stringify(body || {}).toLowerCase();
+
+  // 402: Payment/Quota required, 429: rate limit, but check message for token exhaustion
+  const quotaMsg = bodyStr.includes('insufficient') || bodyStr.includes('quota') || bodyStr.includes('token');
+  return status === 402 || (status === 429 && quotaMsg);
+}
+
+function _rotateApiKey(err) {
+  if (_isTokenQuotaError(err) && _currentKeyIdx < _apiKeys.length - 1) {
+    _currentKeyIdx += 1;
+    console.warn(`[oneMinAI] Quota reached for API key index ${_currentKeyIdx - 1}. Switching to key index ${_currentKeyIdx}.`);
+    http = _createHttpForKey(_apiKeys[_currentKeyIdx]);
+    return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 
 function combinePrompts(system, user) {
   // Combine system and user prompts since 1min.ai doesn't use messages array
@@ -55,6 +91,11 @@ async function makeApiCall(requestBody) {
     const model = aiRecord.model || requestBody.model;
     return { content, usage, model };
   } catch (err) {
+    // If quota reached for current key, rotate to next key and retry once automatically
+    if (_rotateApiKey(err)) {
+      return makeApiCall(requestBody);
+    }
+
     const status = err?.response?.status;
     const body = err?.response?.data ? JSON.stringify(err.response.data).slice(0, 400) : '';
     const msg = `API call failed (${status || 'no-status'}): ${body || err?.message || 'Unknown error'}`;
