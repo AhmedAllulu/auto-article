@@ -2,7 +2,7 @@
  * Prompt templates for "compare" style articles that compare two or more products/ideas.
  */
 
-import { COMMON_STRUCTURE } from './common_structure.js';
+import { COMMON_STRUCTURE } from '../prompts/common_structure.js';
 
 const templates = [
   {

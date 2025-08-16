@@ -3,7 +3,7 @@
  * Each template focuses on creating highly specific, targeted content with varied title formats.
  */
 
-import { COMMON_STRUCTURE } from './common_structure.js';
+import { COMMON_STRUCTURE } from '../prompts/common_structure.js';
 
 const templates = [
   {

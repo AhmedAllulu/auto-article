@@ -3,7 +3,7 @@
  * Edit or add templates as needed. The generator will pick one at random.
  */
 
-import { COMMON_STRUCTURE } from './common_structure.js';
+import { COMMON_STRUCTURE } from '../prompts/common_structure.js';
 
 const templates = [
   {

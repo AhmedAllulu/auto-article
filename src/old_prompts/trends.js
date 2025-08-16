@@ -2,7 +2,7 @@
  * Prompt templates for trend analysis articles that explore current and future developments.
  */
 
-import { COMMON_STRUCTURE } from './common_structure.js';
+import { COMMON_STRUCTURE } from '../prompts/common_structure.js';
 
 const templates = [
   {

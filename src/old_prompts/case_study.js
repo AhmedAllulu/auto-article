@@ -2,7 +2,7 @@
  * Prompt templates for case study articles that showcase real-world examples and results.
  */
 
-import { COMMON_STRUCTURE } from './common_structure.js';
+import { COMMON_STRUCTURE } from '../prompts/common_structure.js';
 
 const templates = [
   {

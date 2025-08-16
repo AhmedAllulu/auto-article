@@ -12,6 +12,7 @@ import categoriesRoute from './routes/categories.js';
 import articlesRoute from './routes/articles.js';
 import jobsRoute from './routes/jobs.js';
 import manualGenerateRoute from './routes/manualGenerate.js';
+
 import { runGenerationBatch } from './services/generation.js';
 import seoRoute from './routes/seo.js';
 import { query } from './db.js';

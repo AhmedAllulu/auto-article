@@ -712,7 +712,7 @@ function appendJsonLd(html, ldArray) {
 }
 
 async function createMasterArticle(category, { preferWebSearch = false } = {}) {
-  const { system, user } = getPrompt('master', category.name);
+  const { system, user } = getPrompt('', category.slug);
   genLog('AI master start (natural text)', { category: category.slug });
   const tMasterStart = Date.now();
   

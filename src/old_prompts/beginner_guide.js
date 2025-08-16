@@ -2,7 +2,7 @@
  * Prompt templates for comprehensive beginner guides that assume no prior knowledge.
  */
 
-import { COMMON_STRUCTURE } from './common_structure.js';
+import { COMMON_STRUCTURE } from '../prompts/common_structure.js';
 
 const templates = [
   {

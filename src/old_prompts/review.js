@@ -2,7 +2,7 @@
  * Prompt templates for detailed review articles covering products, services, or concepts.
  */
 
-import { COMMON_STRUCTURE } from './common_structure.js';
+import { COMMON_STRUCTURE } from '../prompts/common_structure.js';
 
 const templates = [
   {

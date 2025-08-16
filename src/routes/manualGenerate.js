@@ -1,165 +1,47 @@
 import express from 'express';
 import { query, withTransaction } from '../db.js';
-import { createMasterArticle, createHowToArticle, createBestOfArticle, createCompareArticle, createTrendsArticle, insertArticle, updateDailyTokenUsage, incrementJobCount } from '../services/generation.js';
+import { createMasterArticle, insertArticle, updateDailyTokenUsage, incrementJobCount } from '../services/generation.js';
 
 const router = express.Router();
 
 /**
  * @openapi
- * /generate/master:
+ * /generate/article:
  *   post:
  *     tags: [Generation]
- *     summary: Generate a single master article using web search.
+ *     summary: Generate an article for any category.
+ *     description: Generate an article for the selected category. The system will randomly choose from available prompt templates in that category's file.
  *     requestBody:
- *       required: false
+ *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [category]
  *             properties:
- *               categorySlug:
+ *               category:
  *                 type: string
- *                 description: Optional slug of category to generate for. Defaults to first category.
- *     responses:
- *       '200':
- *         description: Generated master article
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 data:
- *                   $ref: '#/components/schemas/Article'
- *       '404':
- *         description: Category not found
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- *       '500':
- *         description: Generation failed
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- */
-router.post('/master', async (req, res) => {
-  try {
-    const { categorySlug } = req.body || {};
-    // Load category – default to highest-priority first one if not specified
-    const catQuery = categorySlug
-      ? await query('SELECT id, name, slug FROM categories WHERE slug = $1 LIMIT 1', [categorySlug])
-      : await query('SELECT id, name, slug FROM categories ORDER BY id ASC LIMIT 1');
-
-    if (catQuery.rowCount === 0) return res.status(404).json({ error: 'Category not found' });
-    const category = catQuery.rows[0];
-
-    const { masterArticle } = await createMasterArticle(category, { preferWebSearch: false });
-
-    await withTransaction(async (client) => {
-      await insertArticle(client, masterArticle);
-      await updateDailyTokenUsage(client, [{
-        prompt_tokens: masterArticle.ai_tokens_input,
-        completion_tokens: masterArticle.ai_tokens_output,
-      }]);
-      await incrementJobCount(client, 1);
-    });
-
-    res.json({ data: masterArticle });
-  } catch (err) {
-    console.error('manual master generation failed', err);
-    res.status(500).json({ error: 'Generation failed' });
-  }
-});
-
-/**
- * @openapi
- * /generate/master-no-search:
- *   post:
- *     tags: [Generation]
- *     summary: Generate a single master article without web search (faster / cheaper).
- *     requestBody:
- *       required: false
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               categorySlug:
- *                 type: string
- *                 description: Optional slug of category to generate for. Defaults to first category.
- *     responses:
- *       '200':
- *         description: Generated master article
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 data:
- *                   $ref: '#/components/schemas/Article'
- *       '404':
- *         description: Category not found
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- *       '500':
- *         description: Generation failed
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- */
-router.post('/master-no-search', async (req, res) => {
-  try {
-    const { categorySlug } = req.body || {};
-    const catQuery = categorySlug
-      ? await query('SELECT id, name, slug FROM categories WHERE slug = $1 LIMIT 1', [categorySlug])
-      : await query('SELECT id, name, slug FROM categories ORDER BY id ASC LIMIT 1');
-
-    if (catQuery.rowCount === 0) return res.status(404).json({ error: 'Category not found' });
-    const category = catQuery.rows[0];
-
-    const { masterArticle } = await createMasterArticle(category, { preferWebSearch: false });
-
-    await withTransaction(async (client) => {
-      await insertArticle(client, masterArticle);
-      await updateDailyTokenUsage(client, [{
-        prompt_tokens: masterArticle.ai_tokens_input,
-        completion_tokens: masterArticle.ai_tokens_output,
-      }]);
-      await incrementJobCount(client, 1);
-    });
-
-    res.json({ data: masterArticle });
-  } catch (err) {
-    console.error('manual master generation failed (no-search)', err);
-    res.status(500).json({ error: 'Generation failed' });
-  }
-});
-
-/**
- * @openapi
- * /generate/how-to:
- *   post:
- *     tags: [Generation]
- *     summary: Generate a practical how-to guide article without web search.
- *     description: Creates step-by-step tutorial articles with troubleshooting sections, safety tips, and practical instructions for solving real problems.
- *     requestBody:
- *       required: false
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               categorySlug:
- *                 type: string
- *                 description: Optional slug of category to generate how-to article for. Defaults to first category.
+ *                 enum: [
+ *                   "technology", "business-finance", "health-wellness", "sports-fitness", 
+ *                   "entertainment-celebrities", "travel-destinations", "careers-job-search", 
+ *                   "food-recipes", "science-innovation", "education-learning", "home-garden", 
+ *                   "parenting-family", "lifestyle-hobbies", "arts-culture", "history-heritage", 
+ *                   "fashion-beauty", "real-estate-property", "automotive-vehicles", 
+ *                   "environment-sustainability", "pets-animals", "diy-crafts", 
+ *                   "relationships-dating", "productivity-self-improvement", 
+ *                   "politics-current-affairs", "movies-tv-shows", "music-performing-arts", 
+ *                   "books-literature", "gaming-esports", "technology-how-tos", 
+ *                   "finance-tips-investments"
+ *                 ]
+ *                 description: Category to generate article for (system will randomly select prompt template)
  *                 example: "technology"
+ *               preferWebSearch:
+ *                 type: boolean
+ *                 description: Use web search to improve freshness (where supported)
+ *                 default: false
  *     responses:
  *       '200':
- *         description: Generated how-to article
+ *         description: Generated article
  *         content:
  *           application/json:
  *             schema:
@@ -167,64 +49,44 @@ router.post('/master-no-search', async (req, res) => {
  *               properties:
  *                 data:
  *                   $ref: '#/components/schemas/Article'
- *                 meta:
- *                   type: object
- *                   properties:
- *                     type:
- *                       type: string
- *                       example: "how-to"
- *                     difficulty:
- *                       type: string
- *                       example: "Beginner"
- *                     timeRequired:
- *                       type: string
- *                       example: "30 minutes"
+ *       '400':
+ *         description: Invalid parameters
  *       '404':
  *         description: Category not found
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
  *       '500':
  *         description: Generation failed
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.post('/how-to', async (req, res) => {
+router.post('/article', async (req, res) => {
   try {
-    const { categorySlug } = req.body || {};
-    // Load category – default to highest-priority first one if not specified
-    const catQuery = categorySlug
-      ? await query('SELECT id, name, slug FROM categories WHERE slug = $1 LIMIT 1', [categorySlug])
-      : await query('SELECT id, name, slug FROM categories ORDER BY id ASC LIMIT 1');
+    const { category: categorySlug, preferWebSearch = false } = req.body || {};
+    
+    if (!categorySlug) {
+      return res.status(400).json({ error: 'category is required' });
+    }
 
-    if (catQuery.rowCount === 0) return res.status(404).json({ error: 'Category not found' });
-    const category = catQuery.rows[0];
+    // Resolve category
+    const catRes = await query('SELECT id, name, slug FROM categories WHERE slug = $1 LIMIT 1', [categorySlug]);
+    if (catRes.rowCount === 0) return res.status(404).json({ error: 'Category not found' });
+    const categoryObj = catRes.rows[0];
 
-    const { howToArticle } = await createHowToArticle(category, { preferWebSearch: false });
+    // Use createMasterArticle which now uses the category-based prompt system
+    // The prompt system will randomly select from all available templates in that category
+    const { masterArticle } = await createMasterArticle(categoryObj, { preferWebSearch: Boolean(preferWebSearch) });
 
+    // Insert article & token usage
     await withTransaction(async (client) => {
-      await insertArticle(client, howToArticle);
+      await insertArticle(client, masterArticle);
       await updateDailyTokenUsage(client, [{
-        prompt_tokens: howToArticle.ai_tokens_input,
-        completion_tokens: howToArticle.ai_tokens_output,
+        prompt_tokens: masterArticle.ai_tokens_input,
+        completion_tokens: masterArticle.ai_tokens_output,
       }]);
       await incrementJobCount(client, 1);
     });
 
-    res.json({ 
-      data: howToArticle,
-      meta: {
-        type: "how-to",
-        category: category.name,
-        generatedAt: new Date().toISOString()
-      }
-    });
+    res.json({ data: masterArticle });
   } catch (err) {
-    console.error('manual how-to generation failed', err);
-    res.status(500).json({ error: 'How-to generation failed' });
+    console.error('[generate/article] generation failed', err);
+    res.status(500).json({ error: 'Generation failed' });
   }
 });
 
@@ -347,213 +209,6 @@ router.post('/translate', async (req, res) => {
   } catch (err) {
     console.error('manual translate generation failed', err);
     res.status(500).json({ error: 'Translation generation failed' });
-  }
-});
-
-/**
- * @openapi
- * /generate/best-of:
- *   post:
- *     tags: [Generation]
- *     summary: Generate a "best of" roundup article listing top items.
- *     description: Creates list-style articles ranking leading products or ideas in a category.
- *     requestBody:
- *       required: false
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               categorySlug:
- *                 type: string
- *                 description: Optional slug of category to generate for. Defaults to first category.
- *                 example: "technology"
- *     responses:
- *       '200':
- *         description: Generated best-of article
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 data:
- *                   $ref: '#/components/schemas/Article'
- *       '404':
- *         description: Category not found
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- *       '500':
- *         description: Generation failed
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- */
-router.post('/best-of', async (req, res) => {
-  try {
-    const { categorySlug } = req.body || {};
-    const catQuery = categorySlug
-      ? await query('SELECT id, name, slug FROM categories WHERE slug = $1 LIMIT 1', [categorySlug])
-      : await query('SELECT id, name, slug FROM categories ORDER BY id ASC LIMIT 1');
-
-    if (catQuery.rowCount === 0) return res.status(404).json({ error: 'Category not found' });
-    const category = catQuery.rows[0];
-
-    const { bestOfArticle } = await createBestOfArticle(category, { preferWebSearch: false });
-
-    await withTransaction(async (client) => {
-      await insertArticle(client, bestOfArticle);
-      await updateDailyTokenUsage(client, [{
-        prompt_tokens: bestOfArticle.ai_tokens_input,
-        completion_tokens: bestOfArticle.ai_tokens_output,
-      }]);
-      await incrementJobCount(client, 1);
-    });
-
-    res.json({ data: bestOfArticle });
-  } catch (err) {
-    console.error('manual best-of generation failed', err);
-    res.status(500).json({ error: 'Best-of generation failed' });
-  }
-});
-
-/**
- * @openapi
- * /generate/compare:
- *   post:
- *     tags: [Generation]
- *     summary: Generate a comparison article.
- *     description: Creates head-to-head comparison articles that highlight differences between top alternatives.
- *     requestBody:
- *       required: false
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               categorySlug:
- *                 type: string
- *                 description: Optional slug of category to generate for. Defaults to first category.
- *                 example: "software"
- *     responses:
- *       '200':
- *         description: Generated comparison article
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 data:
- *                   $ref: '#/components/schemas/Article'
- *       '404':
- *         description: Category not found
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- *       '500':
- *         description: Generation failed
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- */
-router.post('/compare', async (req, res) => {
-  try {
-    const { categorySlug } = req.body || {};
-    const catQuery = categorySlug
-      ? await query('SELECT id, name, slug FROM categories WHERE slug = $1 LIMIT 1', [categorySlug])
-      : await query('SELECT id, name, slug FROM categories ORDER BY id ASC LIMIT 1');
-
-    if (catQuery.rowCount === 0) return res.status(404).json({ error: 'Category not found' });
-    const category = catQuery.rows[0];
-
-    const { compareArticle } = await createCompareArticle(category, { preferWebSearch: false });
-
-    await withTransaction(async (client) => {
-      await insertArticle(client, compareArticle);
-      await updateDailyTokenUsage(client, [{
-        prompt_tokens: compareArticle.ai_tokens_input,
-        completion_tokens: compareArticle.ai_tokens_output,
-      }]);
-      await incrementJobCount(client, 1);
-    });
-
-    res.json({ data: compareArticle });
-  } catch (err) {
-    console.error('manual compare generation failed', err);
-    res.status(500).json({ error: 'Compare generation failed' });
-  }
-});
-
-/**
- * @openapi
- * /generate/trends:
- *   post:
- *     tags: [Generation]
- *     summary: Generate a trends analysis article using web search for current data.
- *     description: Creates trend analysis articles that explore current market developments, emerging patterns, and future predictions using real-time web search.
- *     requestBody:
- *       required: false
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               categorySlug:
- *                 type: string
- *                 description: Optional slug of category to generate for. Defaults to first category.
- *                 example: "technology"
- *     responses:
- *       '200':
- *         description: Generated trends article
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 data:
- *                   $ref: '#/components/schemas/Article'
- *       '404':
- *         description: Category not found
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- *       '500':
- *         description: Generation failed
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- */
-router.post('/trends', async (req, res) => {
-  try {
-    const { categorySlug } = req.body || {};
-    const catQuery = categorySlug
-      ? await query('SELECT id, name, slug FROM categories WHERE slug = $1 LIMIT 1', [categorySlug])
-      : await query('SELECT id, name, slug FROM categories ORDER BY id ASC LIMIT 1');
-
-    if (catQuery.rowCount === 0) return res.status(404).json({ error: 'Category not found' });
-    const category = catQuery.rows[0];
-
-    const { trendsArticle } = await createTrendsArticle(category, { preferWebSearch: false });
-
-    await withTransaction(async (client) => {
-      await insertArticle(client, trendsArticle);
-      await updateDailyTokenUsage(client, [{
-        prompt_tokens: trendsArticle.ai_tokens_input,
-        completion_tokens: trendsArticle.ai_tokens_output,
-      }]);
-      await incrementJobCount(client, 1);
-    });
-
-    res.json({ data: trendsArticle });
-  } catch (err) {
-    console.error('manual trends generation failed', err);
-    res.status(500).json({ error: 'Trends generation failed' });
   }
 });
 
