@@ -5,6 +5,17 @@ import { articlesTable } from '../utils/articlesTable.js';
 
 const router = express.Router();
 
+// Debug endpoint to check database connectivity
+router.get('/debug/db-health', async (req, res) => {
+  try {
+    const result = await query('SELECT 1 as test');
+    res.json({ status: 'ok', dbConnected: true, testResult: result.rows });
+  } catch (err) {
+    console.error('DB Health check failed:', err);
+    res.status(500).json({ status: 'error', dbConnected: false, error: err.message });
+  }
+});
+
 function getBaseUrl(req) {
   const explicit = String(config.seo?.canonicalBaseUrl || '').trim().replace(/\/$/, '');
   if (explicit) return explicit;
