@@ -23,6 +23,27 @@ function escXml(value) {
     .replace(/'/g, '&apos;');
 }
 
+/**
+ * Helper that wraps a DB query and returns an empty result set when the
+ * referenced table does not exist (PostgreSQL error code 42P01).  This lets
+ * sitemap generation continue even if a sharded language table hasn’t been
+ * created yet.
+ *
+ * @param {string} sql
+ * @param {any[]} params
+ * @returns {Promise<{ rows: any[] }>}
+ */
+async function safeQuery(sql, params = []) {
+  try {
+    return await query(sql, params);
+  } catch (err) {
+    if (err && err.code === '42P01') {
+      return { rows: [] };
+    }
+    throw err;
+  }
+}
+
 function buildUrlsetXml(urls) {
   const parts = [];
   parts.push('<?xml version="1.0" encoding="UTF-8"?>');
@@ -132,15 +153,25 @@ async function generateStaticAndCategoryUrlsForLang(base, lang) {
 
   // Categories that actually have articles in this language
   const tbl = articlesTable(lang);
-  const catRes = await query(
-    `SELECT DISTINCT c.slug AS slug,
+  // In the legacy `articles` table we must filter by language_code, whereas
+  // the sharded tables (e.g. articles_de) contain only a single language and
+  // therefore do **not** have this column.  Build the query dynamically to
+  // avoid referencing a non-existent column.
+  const catSql = tbl === 'articles'
+    ? `SELECT DISTINCT c.slug AS slug,
             MAX(COALESCE(a.published_at, a.created_at)) AS lastmod
-     FROM ${tbl} a
-     JOIN categories c ON c.id = a.category_id
-     WHERE a.language_code = $1
-     GROUP BY c.slug`,
-    [lang]
-  );
+       FROM ${tbl} a
+       JOIN categories c ON c.id = a.category_id
+       WHERE a.language_code = $1
+       GROUP BY c.slug`
+    : `SELECT DISTINCT c.slug AS slug,
+            MAX(COALESCE(a.published_at, a.created_at)) AS lastmod
+       FROM ${tbl} a
+       JOIN categories c ON c.id = a.category_id
+       GROUP BY c.slug`;
+  const catParams = tbl === 'articles' ? [lang] : [];
+  // Use safeQuery to ignore missing sharded tables
+  const catRes = await safeQuery(catSql, catParams);
   for (const row of catRes.rows) {
     urls.push({
       loc: `${base}/${lang}/category/${encodeURIComponent(row.slug)}`,
@@ -154,13 +185,18 @@ async function generateStaticAndCategoryUrlsForLang(base, lang) {
 
 async function fetchAllArticleUrlsForLang(base, lang) {
   const tbl = articlesTable(lang);
-  const res = await query(
-    `SELECT slug, COALESCE(published_at, created_at) AS lastmod
-     FROM ${tbl}
-     WHERE language_code = $1
-     ORDER BY COALESCE(published_at, created_at) DESC, id DESC`,
-    [lang]
-  );
+  // Similar to the category query above, include the language filter only
+  // when we are querying the shared `articles` table.
+  const artSql = tbl === 'articles'
+    ? `SELECT slug, COALESCE(published_at, created_at) AS lastmod
+       FROM ${tbl}
+       WHERE language_code = $1
+       ORDER BY COALESCE(published_at, created_at) DESC, id DESC`
+    : `SELECT slug, COALESCE(published_at, created_at) AS lastmod
+       FROM ${tbl}
+       ORDER BY COALESCE(published_at, created_at) DESC, id DESC`;
+  const artParams = tbl === 'articles' ? [lang] : [];
+  const res = await safeQuery(artSql, artParams);
   const urls = [];
   for (const a of res.rows) {
     urls.push({
@@ -188,6 +224,7 @@ router.get('/sitemap.xml', async (req, res) => {
     res.setHeader('Cache-Control', 'public, max-age=3600');
     res.send(indexXml);
   } catch (err) {
+    console.error('Sitemap index generation error:', err);
     res.status(500).type('text/plain').send('Failed to generate sitemap index');
   }
 });
@@ -197,6 +234,9 @@ router.get('/sitemaps/:file', async (req, res) => {
     const file = String(req.params.file || '');
     const base = getBaseUrl(req);
     const allLangs = Array.isArray(config.languages) && config.languages.length > 0 ? config.languages : ['en'];
+    
+    // Debug: Log the request
+    console.log(`Sitemap request: ${file}, base: ${base}, langs: ${allLangs}`);
 
     // Pattern A: language sitemap, e.g. "en.xml" or "de.xml"
     const langMatch = /^([a-z]{2})\.xml$/i.exec(file);
@@ -245,6 +285,7 @@ router.get('/sitemaps/:file', async (req, res) => {
     res.setHeader('Cache-Control', 'public, max-age=3600');
     res.send(xml);
   } catch (err) {
+    console.error('Sitemap generation error:', err);
     res.status(500).type('text/plain').send('Failed to generate sitemap');
   }
 });
