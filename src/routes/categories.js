@@ -2,6 +2,7 @@ import express from 'express';
 import { query } from '../db.js';
 import { config } from '../config.js';
 import { resolveLanguage } from '../utils/lang.js';
+import { articlesTable } from '../utils/articlesTable.js';
 
 const router = express.Router();
 
@@ -32,6 +33,7 @@ router.get('/', async (req, res) => {
     const language = resolveLanguage(req, config.languages);
     console.log(`[categories] Requested language: ${language}`);
     
+    const tbl = articlesTable(language);
     const result = await query(
       `SELECT 
          c.id,
@@ -95,6 +97,7 @@ router.get('/:id/articles', async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
   try {
+    const tbl = articlesTable(language);
     const result = await query(
       `SELECT 
          id,
@@ -118,7 +121,7 @@ router.get('/:id/articles', async (req, res) => {
          category_id,
          published_at,
          created_at
-       FROM articles 
+       FROM ${tbl} 
        WHERE category_id = $1 AND language_code = $2
        ORDER BY created_at DESC 
        LIMIT 200`,

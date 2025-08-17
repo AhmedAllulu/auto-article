@@ -1,6 +1,7 @@
 import express from 'express';
 import { query, withTransaction } from '../db.js';
 import { createMasterArticle, insertArticle, updateDailyTokenUsage, incrementJobCount } from '../services/generation.js';
+import { articlesTable } from '../utils/articlesTable.js';
 
 const router = express.Router();
 
@@ -11,34 +12,33 @@ const router = express.Router();
  *     tags: [Generation]
  *     summary: Generate an article for any category.
  *     description: Generate an article for the selected category. The system will randomly choose from available prompt templates in that category's file.
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [category]
- *             properties:
- *               category:
- *                 type: string
- *                 enum: [
- *                   "technology", "business-finance", "health-wellness", "sports-fitness", 
- *                   "entertainment-celebrities", "travel-destinations", "careers-job-search", 
- *                   "food-recipes", "science-innovation", "education-learning", "home-garden", 
- *                   "parenting-family", "lifestyle-hobbies", "arts-culture", "history-heritage", 
- *                   "fashion-beauty", "real-estate-property", "automotive-vehicles", 
- *                   "environment-sustainability", "pets-animals", "diy-crafts", 
- *                   "relationships-dating", "productivity-self-improvement", 
- *                   "politics-current-affairs", "movies-tv-shows", "music-performing-arts", 
- *                   "books-literature", "gaming-esports", "technology-how-tos", 
- *                   "finance-tips-investments"
- *                 ]
- *                 description: Category to generate article for (system will randomly select prompt template)
- *                 example: "technology"
- *               preferWebSearch:
- *                 type: boolean
- *                 description: Use web search to improve freshness (where supported)
- *                 default: false
+ *     parameters:
+ *       - in: query
+ *         name: category
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [
+ *             "technology", "business-finance", "health-wellness", "sports-fitness",
+ *             "entertainment-celebrities", "travel-destinations", "careers-job-search",
+ *             "food-recipes", "science-innovation", "education-learning", "home-garden",
+ *             "parenting-family", "lifestyle-hobbies", "arts-culture", "history-heritage",
+ *             "fashion-beauty", "real-estate-property", "automotive-vehicles",
+ *             "environment-sustainability", "pets-animals", "diy-crafts",
+ *             "relationships-dating", "productivity-self-improvement",
+ *             "politics-current-affairs", "movies-tv-shows", "music-performing-arts",
+ *             "books-literature", "gaming-esports", "technology-how-tos",
+ *             "finance-tips-investments"
+ *           ]
+ *         description: Category to generate article for (system will randomly select prompt template)
+ *         example: "technology"
+ *       - in: query
+ *         name: preferWebSearch
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: Use web search to improve freshness (where supported)
  *     responses:
  *       '200':
  *         description: Generated article
@@ -58,7 +58,9 @@ const router = express.Router();
  */
 router.post('/article', async (req, res) => {
   try {
-    const { category: categorySlug, preferWebSearch = false } = req.body || {};
+    const categorySlug = req.query.category || req.body?.category;
+    const preferWebSearchRaw = req.query.preferWebSearch ?? req.body?.preferWebSearch ?? false;
+    const preferWebSearch = String(preferWebSearchRaw).toLowerCase() === 'true';
     
     if (!categorySlug) {
       return res.status(400).json({ error: 'category is required' });
@@ -161,8 +163,9 @@ router.post('/translate', async (req, res) => {
     const baseArticle = artRes.rows[0];
 
     // Check if translation already exists
+    const transTbl = articlesTable(language);
     const existsRes = await query(
-      `SELECT 1 FROM articles WHERE slug LIKE $1 || '-%' AND language_code = $2 LIMIT 1`,
+      `SELECT 1 FROM ${transTbl} WHERE slug LIKE $1 || '-%' AND language_code = $2 LIMIT 1`,
       [slug, language]
     );
     if (existsRes.rowCount > 0) {

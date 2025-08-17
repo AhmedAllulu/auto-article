@@ -1,6 +1,7 @@
 import express from 'express';
 import { query } from '../db.js';
 import { config } from '../config.js';
+import { articlesTable } from '../utils/articlesTable.js';
 
 const router = express.Router();
 
@@ -115,47 +116,107 @@ async function fetchArticlesSlice(base, langs, offset, limit) {
   return urls;
 }
 
+/* ------------------------------------------------------------------
+ * Per-language helpers (new)
+ * ------------------------------------------------------------------ */
+
+async function generateStaticAndCategoryUrlsForLang(base, lang) {
+  const staticPaths = ['/', '/categories', '/about', '/contact', '/faq', '/privacy', '/terms', '/cookies'];
+  const urls = [];
+
+  // Static pages for this language
+  urls.push({ loc: `${base}/${lang}`, changefreq: 'daily', priority: '1.0' });
+  for (const p of staticPaths.slice(1)) {
+    urls.push({ loc: `${base}/${lang}${p}`, changefreq: 'weekly', priority: '0.6' });
+  }
+
+  // Categories that actually have articles in this language
+  const tbl = articlesTable(lang);
+  const catRes = await query(
+    `SELECT DISTINCT c.slug AS slug,
+            MAX(COALESCE(a.published_at, a.created_at)) AS lastmod
+     FROM ${tbl} a
+     JOIN categories c ON c.id = a.category_id
+     WHERE a.language_code = $1
+     GROUP BY c.slug`,
+    [lang]
+  );
+  for (const row of catRes.rows) {
+    urls.push({
+      loc: `${base}/${lang}/category/${encodeURIComponent(row.slug)}`,
+      changefreq: 'daily',
+      lastmod: row.lastmod || undefined,
+      priority: '0.7',
+    });
+  }
+  return urls;
+}
+
+async function fetchAllArticleUrlsForLang(base, lang) {
+  const tbl = articlesTable(lang);
+  const res = await query(
+    `SELECT slug, COALESCE(published_at, created_at) AS lastmod
+     FROM ${tbl}
+     WHERE language_code = $1
+     ORDER BY COALESCE(published_at, created_at) DESC, id DESC`,
+    [lang]
+  );
+  const urls = [];
+  for (const a of res.rows) {
+    urls.push({
+      loc: `${base}/${lang}/article/${encodeURIComponent(a.slug)}`,
+      lastmod: a.lastmod || undefined,
+      changefreq: 'monthly',
+      priority: '0.8',
+    });
+  }
+  return urls;
+}
+
 router.get('/sitemap.xml', async (req, res) => {
   try {
     const base = getBaseUrl(req);
     const langs = Array.isArray(config.languages) && config.languages.length > 0 ? config.languages : ['en'];
-    const staticUrls = await generateStaticAndCategoryUrls(base, langs);
-    const articleTotal = await countArticles(langs);
-    const total = staticUrls.length + articleTotal;
 
-    const MAX_URLS_PER_FILE = 49000;
-    if (total > MAX_URLS_PER_FILE) {
-      const parts = Math.ceil(total / MAX_URLS_PER_FILE);
-      const sitemaps = [];
-      for (let i = 0; i < parts; i++) {
-        const loc = `${base}/sitemaps/sitemap-${i + 1}.xml`;
-        sitemaps.push({ loc, lastmod: new Date() });
-      }
-      const indexXml = buildSitemapIndexXml(sitemaps);
-      res.setHeader('Content-Type', 'application/xml; charset=UTF-8');
-      res.setHeader('Cache-Control', 'public, max-age=3600');
-      res.send(indexXml);
-      return;
+    const sitemaps = [];
+    for (const lang of langs) {
+      sitemaps.push({ loc: `${base}/sitemaps/${lang}.xml`, lastmod: new Date() });
     }
 
-    // Single-file sitemap
-    const remaining = Math.max(0, MAX_URLS_PER_FILE - staticUrls.length);
-    const articleUrls = remaining > 0 ? await fetchArticlesSlice(base, langs, 0, remaining) : [];
-    const xml = buildUrlsetXml([...staticUrls, ...articleUrls]);
+    const indexXml = buildSitemapIndexXml(sitemaps);
     res.setHeader('Content-Type', 'application/xml; charset=UTF-8');
     res.setHeader('Cache-Control', 'public, max-age=3600');
-    res.send(xml);
+    res.send(indexXml);
   } catch (err) {
-    res.status(500).type('text/plain').send('Failed to generate sitemap');
+    res.status(500).type('text/plain').send('Failed to generate sitemap index');
   }
 });
 
 router.get('/sitemaps/:file', async (req, res) => {
   try {
+    const file = String(req.params.file || '');
     const base = getBaseUrl(req);
-    const langs = Array.isArray(config.languages) && config.languages.length > 0 ? config.languages : ['en'];
-    const match = /^sitemap-(\d+)\.xml$/i.exec(String(req.params.file || ''));
+    const allLangs = Array.isArray(config.languages) && config.languages.length > 0 ? config.languages : ['en'];
+
+    // Pattern A: language sitemap, e.g. "en.xml" or "de.xml"
+    const langMatch = /^([a-z]{2})\.xml$/i.exec(file);
+    if (langMatch) {
+      const lang = langMatch[1].toLowerCase();
+      if (!allLangs.includes(lang)) return res.status(404).type('text/plain').send('Language not supported');
+
+      const staticUrls = await generateStaticAndCategoryUrlsForLang(base, lang);
+      const articleUrls = await fetchAllArticleUrlsForLang(base, lang);
+      const xml = buildUrlsetXml([...staticUrls, ...articleUrls]);
+      res.setHeader('Content-Type', 'application/xml; charset=UTF-8');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      return res.send(xml);
+    }
+
+    // Pattern B: old paginated sitemap (retain backward compat)
+    const match = /^sitemap-(\d+)\.xml$/i.exec(file);
     if (!match) return res.status(404).type('text/plain').send('Not found');
+
+    const langs = allLangs;
     const index = Number(match[1]);
     if (!Number.isFinite(index) || index < 1) return res.status(400).type('text/plain').send('Invalid sitemap index');
     const staticUrls = await generateStaticAndCategoryUrls(base, langs);
@@ -184,7 +245,7 @@ router.get('/sitemaps/:file', async (req, res) => {
     res.setHeader('Cache-Control', 'public, max-age=3600');
     res.send(xml);
   } catch (err) {
-    res.status(500).type('text/plain').send('Failed to generate sitemap part');
+    res.status(500).type('text/plain').send('Failed to generate sitemap');
   }
 });
 
@@ -204,5 +265,3 @@ router.get('/robots.txt', async (req, res) => {
 });
 
 export default router;
-
-

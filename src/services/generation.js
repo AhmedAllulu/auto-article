@@ -8,6 +8,8 @@ import { chatCompletion as openAIChat } from './openAI.js';
 import sanitizeHtml from 'sanitize-html';
 import { getPrompt } from '../prompts/index.js';
 import { buildPrompt as buildTranslationPrompt } from '../prompts/translation.js';
+// Import table routing helper
+import { articlesTable, LANG_SHARDED_ARTICLE_TABLES } from '../utils/articlesTable.js';
 
 // Debug logging for generation flow (enable with DEBUG_GENERATION=true)
 const DEBUG_GENERATION = String(process.env.DEBUG_GENERATION || 'false') === 'true';
@@ -470,10 +472,16 @@ async function getMastersFromToday() {
 }
 
 async function getExistingTranslationLanguagesForMaster(slugBase) {
-  const res = await query(
-    `SELECT language_code FROM articles WHERE slug LIKE $1 || '-%'`,
-    [slugBase]
+  // Union across all known article tables so we detect existing translations
+  const tables = ['articles'].concat(
+    [...LANG_SHARDED_ARTICLE_TABLES].map((l) => `articles_${l}`)
   );
+
+  const unionSql = tables
+    .map((tbl) => `SELECT language_code FROM ${tbl} WHERE slug LIKE $1 || '-%'`)
+    .join(' UNION ALL ');
+
+  const res = await query(unionSql, [slugBase]);
   const set = new Set();
   for (const row of res.rows) set.add(row.language_code);
   return set;
@@ -510,8 +518,9 @@ async function insertArticle(client, article) {
     content_hash,
   } = article;
 
+  const tableName = articlesTable(language_code);
   const res = await client.query(
-    `INSERT INTO articles (
+    `INSERT INTO ${tableName} (
       title, slug, content, summary, language_code, category_id, image_url,
       meta_title, meta_description, canonical_url, reading_time_minutes,
       ai_model, ai_prompt, ai_tokens_input, ai_tokens_output, total_tokens,

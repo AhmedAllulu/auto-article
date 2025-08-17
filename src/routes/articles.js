@@ -2,6 +2,7 @@ import express from 'express';
 import { query } from '../db.js';
 import { config } from '../config.js';
 import { resolveLanguage } from '../utils/lang.js';
+import { articlesTable } from '../utils/articlesTable.js';
 
 const router = express.Router();
 
@@ -42,6 +43,7 @@ router.get('/latest', async (req, res) => {
   const rawLimit = Number(req.query.limit);
   const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(200, Math.trunc(rawLimit))) : 12;
   try {
+    const tbl = articlesTable(language);
     const result = await query(
       `SELECT 
          a.id,
@@ -56,7 +58,7 @@ router.get('/latest', async (req, res) => {
          c.slug AS category_slug,
          a.published_at,
          a.created_at
-       FROM articles a
+       FROM ${tbl} a
        LEFT JOIN categories c ON c.id = a.category_id
        WHERE a.language_code = $1
        ORDER BY COALESCE(a.published_at, a.created_at) DESC, a.id DESC
@@ -129,9 +131,11 @@ router.get('/slug/:slug', async (req, res) => {
     if (candidates.length === 0) return res.status(404).json({ error: 'Not found' });
 
     while (candidates.length < 4) candidates.push(candidates[candidates.length - 1]);
-    const result = await query(
+    const tblPreferred = articlesTable(language);
+    // Search preferred language table first
+    let result = await query(
       `SELECT a.*, c.name AS category_name, c.slug AS category_slug
-       FROM articles a
+       FROM ${tblPreferred} a
        LEFT JOIN categories c ON c.id = a.category_id
        WHERE a.slug = ANY($1)
        ORDER BY CASE a.slug
@@ -143,6 +147,23 @@ router.get('/slug/:slug', async (req, res) => {
        LIMIT 1`,
       [candidates, candidates[0], candidates[1], candidates[2], candidates[3]]
     );
+    // Fallback to unified table if not found
+    if (result.rowCount === 0 && tblPreferred !== 'articles') {
+      result = await query(
+        `SELECT a.*, c.name AS category_name, c.slug AS category_slug
+         FROM articles a
+         LEFT JOIN categories c ON c.id = a.category_id
+         WHERE a.slug = ANY($1)
+         ORDER BY CASE a.slug
+           WHEN $2 THEN 1
+           WHEN $3 THEN 2
+           WHEN $4 THEN 3
+           WHEN $5 THEN 4
+           ELSE 5 END
+         LIMIT 1`,
+        [candidates, candidates[0], candidates[1], candidates[2], candidates[3]]
+      );
+    }
     if (result.rowCount === 0) return res.status(404).json({ error: 'Not found' });
     res.set('Vary', 'Accept-Language');
     res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
@@ -155,15 +176,16 @@ router.get('/:id/related', async (req, res) => {
   const language = resolveLanguage(req, config.languages);
   const id = req.params.id;
   try {
+    const baseTbl = articlesTable(language);
     const baseRes = await query(
-      'SELECT category_id, language_code, slug FROM articles WHERE id = $1',
+      `SELECT category_id, language_code, slug FROM ${baseTbl} WHERE id = $1`,
       [id]
     );
     if (baseRes.rowCount === 0) return res.status(404).json({ error: 'Not found' });
     const { category_id, slug } = baseRes.rows[0];
     const rel = await query(
       `SELECT id, title, slug, summary, meta_description, image_url, language_code, published_at, created_at
-       FROM articles
+       FROM ${baseTbl}
        WHERE category_id = $1 AND language_code = $2 AND id <> $3 AND slug <> $4
        ORDER BY COALESCE(published_at, created_at) DESC, id DESC
        LIMIT 10`,

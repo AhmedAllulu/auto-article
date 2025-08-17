@@ -14,10 +14,10 @@ Include these sections in your article:
 4. **Key Takeaways** - 5-7 bullet points summarizing main insights
 
 SEO REQUIREMENTS:
-- Include a compelling title with primary keyword
-- Write a meta description (150-160 characters)
+- Include a compelling title with primary keyword (50-57 characters, very important) 
+- Write a meta description (150-160 characters, very important)
 - Naturally incorporate 10-15 related keywords throughout
-- Add 3-5 high-quality external links to authoritative sources
+- Add 3-5 high-quality external links to authoritative sources (no more than 2 per section)
 - Structure content for featured snippets
 
 FORMAT YOUR RESPONSE AS:
@@ -62,6 +62,7 @@ FORMAT YOUR RESPONSE AS:
 - [Official Documentation](https://example.com/link3)
 
 CONTENT GUIDELINES:
+- The subject can be chosen freely by the writer (don't use the examples exactly, very important). but it should be a topic that is interesting and relevant to the reader and very specific like "google ads, bluetooth problems, interesting books, etc.".
 - Write 600-800 words total
 - Use clear, engaging language
 - Include actionable insights and examples
