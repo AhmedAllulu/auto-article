@@ -196,7 +196,7 @@ router.get('/:id/articles', async (req, res) => {
       const categoryResult = await query('SELECT id, name, slug FROM categories WHERE id = $1', [id]);
       if (categoryResult.rows.length > 0) {
         await res.trackView('category', {
-          id: categoryResult.rows[0].id,
+          id: parseInt(categoryResult.rows[0].id), // Ensure ID is integer
           slug: categoryResult.rows[0].slug,
           name: categoryResult.rows[0].name
         });
