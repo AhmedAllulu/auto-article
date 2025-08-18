@@ -38,18 +38,29 @@ router.get('/', async (req, res) => {
     console.log(`[categories] Requested language: ${language}`);
     
     const tbl = articlesTable(language);
+    
+    // Query categories with article counts
     const result = await query(
       `SELECT 
          c.id,
          COALESCE(ct_lang.name, ct_en.name, c.name) AS name,
-         c.slug
+         c.slug,
+         COALESCE(article_counts.article_count, 0) AS article_count
        FROM categories c
        LEFT JOIN category_translations ct_lang
          ON ct_lang.category_id = c.id AND ct_lang.language_code = $1
        LEFT JOIN category_translations ct_en
          ON ct_en.category_id = c.id AND ct_en.language_code = 'en'
+       LEFT JOIN (
+         SELECT 
+           category_id,
+           COUNT(*) as article_count
+         FROM ${tbl}
+         ${tbl === 'articles' ? 'WHERE language_code = $2' : ''}
+         GROUP BY category_id
+       ) article_counts ON article_counts.category_id = c.id
        ORDER BY name ASC`,
-      [language]
+      tbl === 'articles' ? [language, language] : [language]
     );
     
     console.log(`[categories] Found ${result.rows.length} categories for language: ${language}`);
