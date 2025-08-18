@@ -45,8 +45,12 @@ export async function chatCompletion({ system, user, model = config.openAI.defau
   const body = {
     model,
     messages,
-    temperature,
   };
+
+  // GPT-5-nano only supports default temperature (1), don't pass custom temperature
+  if (model !== 'gpt-5-nano') {
+    body.temperature = temperature;
+  }
 
   try {
     const { data } = await http.post('/v1/chat/completions', body);

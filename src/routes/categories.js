@@ -3,8 +3,12 @@ import { query } from '../db.js';
 import { config } from '../config.js';
 import { resolveLanguage } from '../utils/lang.js';
 import { articlesTable } from '../utils/articlesTable.js';
+import { autoTrackViews } from '../middleware/viewTracking.js';
 
 const router = express.Router();
+
+// Add view tracking middleware to all routes
+router.use(autoTrackViews);
 
 /**
  * @openapi
@@ -98,35 +102,77 @@ router.get('/:id/articles', async (req, res) => {
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
   try {
     const tbl = articlesTable(language);
-    const result = await query(
-      `SELECT 
-         id,
-         title,
-         slug,
-         content,
-         summary,
-         image_url,
-         language_code,
-         meta_title,
-         meta_description,
-         canonical_url,
-         reading_time_minutes,
-         ai_model,
-         ai_prompt,
-         ai_tokens_input,
-         ai_tokens_output,
-         total_tokens,
-         source_url,
-         content_hash,
-         category_id,
-         published_at,
-         created_at
-       FROM ${tbl} 
-       WHERE category_id = $1 AND language_code = $2
-       ORDER BY created_at DESC 
-       LIMIT 200`,
-      [id, language]
-    );
+    // For language-specific tables, we don't need to filter by language_code
+    const querySql = tbl === 'articles'
+      ? `SELECT 
+           id,
+           title,
+           slug,
+           content,
+           summary,
+           image_url,
+           language_code,
+           meta_title,
+           meta_description,
+           canonical_url,
+           reading_time_minutes,
+           ai_model,
+           ai_prompt,
+           ai_tokens_input,
+           ai_tokens_output,
+           total_tokens,
+           source_url,
+           content_hash,
+           category_id,
+           published_at,
+           created_at
+         FROM ${tbl} 
+         WHERE category_id = $1 AND language_code = $2
+         ORDER BY created_at DESC 
+         LIMIT 200`
+      : `SELECT 
+           id,
+           title,
+           slug,
+           content,
+           summary,
+           image_url,
+           '${language}' AS language_code,
+           meta_title,
+           meta_description,
+           canonical_url,
+           reading_time_minutes,
+           ai_model,
+           ai_prompt,
+           ai_tokens_input,
+           ai_tokens_output,
+           total_tokens,
+           source_url,
+           content_hash,
+           category_id,
+           published_at,
+           created_at
+         FROM ${tbl} 
+         WHERE category_id = $1
+         ORDER BY created_at DESC 
+         LIMIT 200`;
+    
+    const queryParams = tbl === 'articles' ? [id, language] : [id];
+    const result = await query(querySql, queryParams);
+    
+    // Track category view when viewing category articles
+    if (res.trackView && result.rows.length > 0) {
+      // Get category info for tracking
+      const categoryResult = await query('SELECT id, name, slug FROM categories WHERE id = $1', [id]);
+      if (categoryResult.rows.length > 0) {
+        await res.trackView('category', {
+          id: categoryResult.rows[0].id,
+          slug: categoryResult.rows[0].slug,
+          name: categoryResult.rows[0].name
+        });
+      }
+    }
+    
     res.set('Vary', 'Accept-Language');
     res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     res.json({ data: result.rows, language });

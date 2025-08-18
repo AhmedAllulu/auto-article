@@ -3,8 +3,12 @@ import { query } from '../db.js';
 import { config } from '../config.js';
 import { resolveLanguage } from '../utils/lang.js';
 import { articlesTable } from '../utils/articlesTable.js';
+import { autoTrackViews } from '../middleware/viewTracking.js';
 
 const router = express.Router();
+
+// Add view tracking middleware to all routes
+router.use(autoTrackViews);
 
 // (handlers documented below in OpenAPI section)
 
@@ -147,27 +151,52 @@ router.get('/slug/:slug', async (req, res) => {
        LIMIT 1`,
       [candidates, candidates[0], candidates[1], candidates[2], candidates[3]]
     );
-    // Fallback to unified table if not found
-    if (result.rowCount === 0 && tblPreferred !== 'articles') {
-      result = await query(
-        `SELECT a.*, c.name AS category_name, c.slug AS category_slug
-         FROM articles a
-         LEFT JOIN categories c ON c.id = a.category_id
-         WHERE a.slug = ANY($1)
-         ORDER BY CASE a.slug
-           WHEN $2 THEN 1
-           WHEN $3 THEN 2
-           WHEN $4 THEN 3
-           WHEN $5 THEN 4
-           ELSE 5 END
-         LIMIT 1`,
-        [candidates, candidates[0], candidates[1], candidates[2], candidates[3]]
-      );
+    // Fallback to other language tables if not found in preferred table
+    if (result.rowCount === 0) {
+      const languages = ['en', 'de', 'fr', 'es', 'pt', 'ar', 'hi'];
+      for (const lang of languages) {
+        if (lang === language) continue; // Skip preferred language table we already checked
+        
+        const fallbackTable = articlesTable(lang);
+        try {
+          result = await query(
+            `SELECT a.*, c.name AS category_name, c.slug AS category_slug
+             FROM ${fallbackTable} a
+             LEFT JOIN categories c ON c.id = a.category_id
+             WHERE a.slug = ANY($1)
+             ORDER BY CASE a.slug
+               WHEN $2 THEN 1
+               WHEN $3 THEN 2
+               WHEN $4 THEN 3
+               WHEN $5 THEN 4
+               ELSE 5 END
+             LIMIT 1`,
+            [candidates, candidates[0], candidates[1], candidates[2], candidates[3]]
+          );
+          if (result.rowCount > 0) break;
+        } catch (err) {
+          // Skip if table doesn't exist yet
+          if (err.code !== '42P01') throw err;
+        }
+      }
     }
     if (result.rowCount === 0) return res.status(404).json({ error: 'Not found' });
+    
+    const article = result.rows[0];
+    
+    // Track article view
+    if (res.trackView) {
+      await res.trackView('article', {
+        id: article.id,
+        slug: article.slug,
+        language_code: article.language_code || language,
+        category_id: article.category_id
+      });
+    }
+    
     res.set('Vary', 'Accept-Language');
     res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
-    res.json({ data: result.rows[0], language });
+    res.json({ data: article, language });
   } catch (err) {
     res.status(500).json({ error: 'Failed to load article' });
   }
@@ -177,20 +206,29 @@ router.get('/:id/related', async (req, res) => {
   const id = req.params.id;
   try {
     const baseTbl = articlesTable(language);
-    const baseRes = await query(
-      `SELECT category_id, language_code, slug FROM ${baseTbl} WHERE id = $1`,
-      [id]
-    );
+    // For language-specific tables, we need to handle the language_code column differently
+    const baseQuerySql = baseTbl === 'articles'
+      ? `SELECT category_id, language_code, slug FROM ${baseTbl} WHERE id = $1`
+      : `SELECT category_id, '${language}' AS language_code, slug FROM ${baseTbl} WHERE id = $1`;
+    
+    const baseRes = await query(baseQuerySql, [id]);
     if (baseRes.rowCount === 0) return res.status(404).json({ error: 'Not found' });
     const { category_id, slug } = baseRes.rows[0];
-    const rel = await query(
-      `SELECT id, title, slug, summary, meta_description, image_url, language_code, published_at, created_at
-       FROM ${baseTbl}
-       WHERE category_id = $1 AND language_code = $2 AND id <> $3 AND slug <> $4
-       ORDER BY COALESCE(published_at, created_at) DESC, id DESC
-       LIMIT 10`,
-      [category_id, language, id, slug]
-    );
+    
+    const relQuerySql = baseTbl === 'articles'
+      ? `SELECT id, title, slug, summary, meta_description, image_url, language_code, published_at, created_at
+         FROM ${baseTbl}
+         WHERE category_id = $1 AND language_code = $2 AND id <> $3 AND slug <> $4
+         ORDER BY COALESCE(published_at, created_at) DESC, id DESC
+         LIMIT 10`
+      : `SELECT id, title, slug, summary, meta_description, image_url, '${language}' AS language_code, published_at, created_at
+         FROM ${baseTbl}
+         WHERE category_id = $1 AND id <> $2 AND slug <> $3
+         ORDER BY COALESCE(published_at, created_at) DESC, id DESC
+         LIMIT 10`;
+    
+    const relParams = baseTbl === 'articles' ? [category_id, language, id, slug] : [category_id, id, slug];
+    const rel = await query(relQuerySql, relParams);
     res.set('Vary', 'Accept-Language');
     res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     res.json({ data: rel.rows, language });

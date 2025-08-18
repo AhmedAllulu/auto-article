@@ -10,6 +10,8 @@ import { getPrompt } from '../prompts/index.js';
 import { buildPrompt as buildTranslationPrompt } from '../prompts/translation.js';
 // Import table routing helper
 import { articlesTable, LANG_SHARDED_ARTICLE_TABLES } from '../utils/articlesTable.js';
+import { translateChunk } from './translator.js';
+import HTMLTranslator from './htmlTranslator.js';
 
 // Debug logging for generation flow (enable with DEBUG_GENERATION=true)
 const DEBUG_GENERATION = String(process.env.DEBUG_GENERATION || 'false') === 'true';
@@ -19,7 +21,7 @@ function genLog(...args) {
 
 const TOP_REVENUE_LANGUAGES = new Set(['en', 'de', 'fr', 'es', 'pt', 'ar']);
 
-function computePriorityScore({ categorySlug, languageCode, countryCode }) {
+export function computePriorityScore({ categorySlug, languageCode, countryCode }) {
   const lw = Number(config.priorities.languages[languageCode] || 0);
   const cw = Number(config.priorities.countries[countryCode || 'US'] || 0); // default to US if not provided
   const kw = Number(config.priorities.categories[categorySlug] || 0);
@@ -29,7 +31,7 @@ function computePriorityScore({ categorySlug, languageCode, countryCode }) {
   return score;
 }
 
-function bestMarketForLanguage(languageCode) {
+export function bestMarketForLanguage(languageCode) {
   const markets = config.priorities.languageMarkets[languageCode] || [];
   if (!markets.length) return 'US';
   // Choose market with highest country weight
@@ -49,6 +51,25 @@ function computeHash(text) {
   return crypto.createHash('sha256').update(text).digest('hex');
 }
 
+function escapeRegex(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function estimateReadingTimeMinutes(htmlContent) {
+  if (!htmlContent) return 1;
+  // Remove HTML tags and count words
+  const textContent = htmlContent.replace(/<[^>]*>/g, ' ');
+  const words = textContent.trim().split(/\s+/).length;
+  // Average reading speed: 200 words per minute
+  const minutes = Math.max(1, Math.ceil(words / 200));
+  return minutes;
+}
+
+function canonicalForSlug(slug) {
+  const baseUrl = config.seo?.canonicalBaseUrl || 'https://vivaverse.top';
+  return `${baseUrl}/${slug}`;
+}
+
 function sanitizeHtmlContent(html) {
   // Strip scripts/styles and dangerous attributes but keep headings, links, images, lists, etc.
   return sanitizeHtml(String(html || ''), {
@@ -61,13 +82,80 @@ function sanitizeHtmlContent(html) {
   });
 }
 
+// Simple markdown to HTML converter for translated content
+function convertMarkdownToHtml(markdown) {
+  if (!markdown) return '';
+  
+  // Split into lines and process each
+  const lines = markdown.split('\n');
+  let html = '';
+  let inParagraph = false;
+  
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    
+    // Skip empty lines
+    if (!line.trim()) {
+      if (inParagraph) {
+        html += '</p>\n';
+        inParagraph = false;
+      }
+      continue;
+    }
+    
+    // Headers
+    if (line.match(/^#{1,6}\s/)) {
+      if (inParagraph) {
+        html += '</p>\n';
+        inParagraph = false;
+      }
+      const level = line.match(/^(#{1,6})/)[1].length;
+      const text = line.replace(/^#{1,6}\s*/, '').trim();
+      html += `<h${level}>${text}</h${level}>\n`;
+      continue;
+    }
+    
+    // Process inline formatting
+    line = line
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // Bold
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>'); // Links
+    
+    // Regular text - wrap in paragraph
+    if (!inParagraph) {
+      html += '<p>';
+      inParagraph = true;
+    }
+    html += line + '\n';
+  }
+  
+  // Close any open paragraph
+  if (inParagraph) {
+    html += '</p>\n';
+  }
+  
+  return html.trim();
+}
+
 // Ensure uniqueness of article slugs by appending an incrementing numeric suffix when needed
 async function generateUniqueSlug(baseSlug) {
-  const res = await query(
-    'SELECT slug FROM articles WHERE slug LIKE $1 || \'%\'',
-    [baseSlug]
-  );
-  const existing = new Set(res.rows.map((r) => r.slug));
+  // Check all language-specific tables for existing slugs
+  const languages = ['en', 'de', 'fr', 'es', 'pt', 'ar', 'hi'];
+  const existing = new Set();
+  
+  for (const lang of languages) {
+    const tableName = articlesTable(lang);
+    try {
+      const res = await query(
+        `SELECT slug FROM ${tableName} WHERE slug LIKE $1 || '%'`,
+        [baseSlug]
+      );
+      res.rows.forEach(row => existing.add(row.slug));
+    } catch (err) {
+      // Skip if table doesn't exist yet
+      if (err.code !== '42P01') throw err;
+    }
+  }
+  
   if (!existing.has(baseSlug)) return baseSlug;
   let counter = 2;
   while (existing.has(`${baseSlug}-${counter}`)) counter += 1;
@@ -405,11 +493,6 @@ function evaluateMasterQuality(masterJson) {
 
 
 
-function canonicalForSlug(slug) {
-  const base = String(config.seo.canonicalBaseUrl || '').replace(/\/+$/, '');
-  if (!base) return null;
-  return `${base}/${slug}`;
-}
 
 // Removed: repair prompts and JSON parsing helpers (no longer needed in natural text approach)
 
@@ -429,8 +512,8 @@ async function upsertTodayJob(target) {
 async function getTodaysMastersCount() {
   const res = await query(
     `SELECT COUNT(*)::int AS count
-     FROM articles
-     WHERE language_code = 'en' AND published_at::date = CURRENT_DATE`
+     FROM articles_en
+     WHERE published_at::date = CURRENT_DATE`
   );
   return res.rows[0]?.count || 0;
 }
@@ -438,9 +521,8 @@ async function getTodaysMastersCount() {
 async function getTodaysHowTosCount() {
   const res = await query(
     `SELECT COUNT(*)::int AS count
-     FROM articles
-     WHERE language_code = 'en'
-       AND slug LIKE 'how-to-%'
+     FROM articles_en
+     WHERE slug LIKE 'how-to-%'
        AND published_at::date = CURRENT_DATE`
   );
   return res.rows[0]?.count || 0;
@@ -456,9 +538,9 @@ async function getMastersFromToday() {
             a.category_id,
             c.slug AS category_slug,
             c.name AS category_name
-     FROM articles a
+     FROM articles_en a
      LEFT JOIN categories c ON c.id = a.category_id
-     WHERE a.language_code = 'en' AND a.published_at::date = CURRENT_DATE
+     WHERE a.published_at::date = CURRENT_DATE
      ORDER BY a.id ASC`
   );
   return res.rows.map((r) => ({
@@ -472,19 +554,25 @@ async function getMastersFromToday() {
 }
 
 async function getExistingTranslationLanguagesForMaster(slugBase) {
-  // Union across all known article tables so we detect existing translations
-  const tables = ['articles'].concat(
-    [...LANG_SHARDED_ARTICLE_TABLES].map((l) => `articles_${l}`)
-  );
-
-  const unionSql = tables
-    .map((tbl) => `SELECT language_code FROM ${tbl} WHERE slug LIKE $1 || '-%'`)
-    .join(' UNION ALL ');
-
-  const res = await query(unionSql, [slugBase]);
-  const set = new Set();
-  for (const row of res.rows) set.add(row.language_code);
-  return set;
+  // Check all language-specific tables for existing translations
+  const languages = ['en', 'de', 'fr', 'es', 'pt', 'ar', 'hi'];
+  const existingLanguages = new Set();
+  
+  for (const lang of languages) {
+    const tableName = articlesTable(lang);
+    try {
+      const res = await query(
+        `SELECT language_code FROM ${tableName} WHERE slug LIKE $1 || '-%'`,
+        [slugBase]
+      );
+      res.rows.forEach(row => existingLanguages.add(row.language_code));
+    } catch (err) {
+      // Skip if table doesn't exist yet
+      if (err.code !== '42P01') throw err;
+    }
+  }
+  
+  return existingLanguages;
 }
 
 async function incrementJobCount(client, inc) {
@@ -578,11 +666,7 @@ async function getCategories() {
   return res.rows;
 }
 
-function estimateReadingTimeMinutes(text) {
-  const words = countWords(text);
-  const minutes = Math.max(1, Math.round(words / 200));
-  return minutes;
-}
+
 
 function validateWordCount(content, minWords = 600, maxWords = 800) {
   const wordCount = countWords(content);
@@ -1152,75 +1236,82 @@ async function createTrendsArticle(category, { preferWebSearch = false } = {}) {
   return { trendsArticle, trendsJson };
 }
 
-async function generateTranslationArticle({ lang, category, masterJson, slugBase, title, summary, imageUrl }) {
-  const { system: ts, user: tu } = buildTranslationPrompt(lang, masterJson);
-  genLog('AI translation start', { category: category.slug, lang });
+async function generateTranslationArticle({ lang, category, masterSlug, masterTitle, masterSummary, imageUrl }) {
+  genLog('AI translation start', { category: category.slug, lang, masterSlug });
   const tTransStart = Date.now();
-  // SINGLE AI CALL for natural text translation using OpenAI GPT-3.5
-  const aiT = await openAIChat({ system: ts, user: tu, model: config.openAI.defaultModel });
-  genLog('AI translation done', { category: category.slug, lang, ms: Date.now() - tTransStart });
-  
-  // ALWAYS extract successfully (no JSON parsing)
-  const extracted = extractFromNaturalText(aiT.content, category.name);
-  
-  // Convert to article structure
-  const tJson = {
-    title: extracted.title || title,
-    metaTitle: extracted.title || title,
-    metaDescription: extracted.metaDescription || summary,
-    intro: extracted.intro,
-    sections: extracted.sections,
-    faq: extracted.faq,
-    keywords: extracted.keywords,
-    externalLinks: extracted.externalLinks,
-    summary: extracted.summary || summary,
-    sourceUrls: [],
-    category: category.name
-  };
 
-  // Build article (same as before)
-  const tTitle = tJson.title;
-  const tSlug = await generateUniqueSlug(`${slugBase}-${lang}`);
-  let tContent = sanitizeHtmlContent(assembleHtml(tJson));
-  const tSummary = tJson.summary;
-  const tMetaTitle = tJson.metaTitle;
-  const tMetaDesc = tJson.metaDescription || tSummary || '';
+  // Get the master article's HTML content directly from database
+  const masterRes = await query(
+    `SELECT title, content, summary, meta_description FROM articles_en WHERE slug = $1`,
+    [masterSlug]
+  );
+  
+  if (!masterRes.rows.length) {
+    throw new Error(`Master article not found: ${masterSlug}`);
+  }
+
+  const masterArticle = masterRes.rows[0];
+  const originalContent = masterArticle.content;
+  const originalTitle = masterArticle.title;
+  const originalSummary = masterArticle.summary;
+  const originalMetaDesc = masterArticle.meta_description;
+
+  // Use HTML-aware translator to preserve exact structure
+  const translator = new HTMLTranslator(lang);
+  
+  // Translate the HTML content while preserving structure
+  let translatedContent = await translator.translateHTML(originalContent);
+  
+  // Translate metadata fields
+  const translatedTitle = await translateChunk(lang, originalTitle);
+  const translatedSummary = await translateChunk(lang, originalSummary || masterSummary || '');
+  const translatedMetaDesc = await translateChunk(lang, originalMetaDesc || originalSummary || '');
+
+  // Update title in HTML content
+  translatedContent = translatedContent.replace(
+    new RegExp(`<h1[^>]*>${escapeRegex(originalTitle)}</h1>`, 'gi'),
+    `<h1>${translatedTitle}</h1>`
+  );
+
+  // Generate unique slug and canonical URL for target language
+  const tSlug = await generateUniqueSlug(`${masterSlug}-${lang}`);
   const tCanonical = canonicalForSlug(tSlug);
-  const tReadingTime = estimateReadingTimeMinutes(tContent);
+
+  // Update language and canonical URL in JSON-LD (HTMLTranslator handles most of it)
+  translatedContent = translatedContent.replace(
+    /"inLanguage":"en"/g,
+    `"inLanguage":"${lang}"`
+  );
+  
+  translatedContent = translatedContent.replace(
+    /"mainEntityOfPage":"[^"]+"/g,
+    `"mainEntityOfPage":"${tCanonical}"`
+  );
+
+  const tReadingTime = estimateReadingTimeMinutes(translatedContent);
+
+  genLog('AI translation done', { category: category.slug, lang, ms: Date.now() - tTransStart });
 
   const tArticle = {
-    title: tTitle,
+    title: translatedTitle,
     slug: tSlug,
-    content: tContent,
-    summary: tSummary,
+    content: translatedContent,
+    summary: translatedSummary,
     language_code: lang,
     category_id: category.id,
     image_url: imageUrl,
-    meta_title: tMetaTitle,
-    meta_description: tMetaDesc,
+    meta_title: translatedTitle,
+    meta_description: translatedMetaDesc,
     canonical_url: tCanonical,
     reading_time_minutes: tReadingTime,
-    ai_model: aiT.model,
-    ai_prompt: tu,
-    ai_tokens_input: aiT.usage?.prompt_tokens || 0,
-    ai_tokens_output: aiT.usage?.completion_tokens || 0,
-    total_tokens: aiT.usage?.total_tokens || 0,
+    ai_model: config.openAI.defaultModel,
+    ai_prompt: `HTML translation to ${lang}`,
+    ai_tokens_input: 0, // Will be updated if needed
+    ai_tokens_output: 0, // Will be updated if needed  
+    total_tokens: 0, // Will be updated if needed
     source_url: null,
-    // content_hash will be added after final content is assembled
+    content_hash: computeHash(translatedContent + translatedTitle + lang),
   };
-
-  // Append JSON-LD schema to translation content
-  const tLd = buildArticleJsonLd({
-    masterJson: tJson,
-    title: tTitle,
-    description: tMetaDesc || tSummary,
-    canonicalUrl: tCanonical,
-    imageUrl: imageUrl,
-    languageCode: lang,
-  });
-  tArticle.content = appendJsonLd(tArticle.content, tLd);
-  // Final content hash after sanitization and JSON-LD inclusion
-  tArticle.content_hash = computeHash(tArticle.content + tTitle + lang);
 
   trackSuccess();
 
@@ -1350,10 +1441,9 @@ export async function runGenerationBatch() {
         const tArticle = await generateTranslationArticle({
           lang,
           category,
-          masterJson,
-          slugBase: masterArticle.slug,
-          title: masterArticle.title,
-          summary: masterArticle.summary,
+          masterSlug: masterArticle.slug,
+          masterTitle: masterArticle.title,
+          masterSummary: masterArticle.summary,
           imageUrl: masterArticle.image_url,
         });
         if (!tArticle) continue;
@@ -1391,7 +1481,7 @@ export async function runGenerationBatch() {
       // Attempt to rebuild minimal masterJson by extracting from existing HTML is non-trivial; require skipping
       // However, earlier in this run, createMasterArticle produced masterJson. For existing DB masters we don't have it.
       // To support translations, we will fetch the master content and try to extract a pseudo-JSON using extractFromNaturalText
-      const contentRes = await query(`SELECT content FROM articles WHERE slug = $1 LIMIT 1`, [m.slug]);
+      const contentRes = await query(`SELECT content FROM articles_en WHERE slug = $1 LIMIT 1`, [m.slug]);
       const masterContent = contentRes.rows[0]?.content || '';
       const extracted = extractFromNaturalText(masterContent, category?.name || '');
       const masterJson = {
@@ -1432,10 +1522,9 @@ export async function runGenerationBatch() {
           const tArticle = await generateTranslationArticle({
             lang,
             category,
-            masterJson,
-            slugBase: masterArticle.slug,
-            title: masterArticle.title,
-            summary: masterArticle.summary,
+            masterSlug: masterArticle.slug,
+            masterTitle: masterArticle.title,
+            masterSummary: masterArticle.summary,
             imageUrl: masterArticle.image_url,
           });
           if (!tArticle) continue;
@@ -1505,6 +1594,6 @@ export async function runGenerationBatch() {
 }
 
 // Named export for on-demand generation endpoints
-export { createMasterArticle, createHowToArticle, createBestOfArticle, createCompareArticle, createTrendsArticle, generateTranslationArticle, extractFromNaturalText, insertArticle, updateDailyTokenUsage, incrementJobCount };
+export { createMasterArticle, generateTranslationArticle, extractFromNaturalText, insertArticle, updateDailyTokenUsage, incrementJobCount, getCategories };
 
 

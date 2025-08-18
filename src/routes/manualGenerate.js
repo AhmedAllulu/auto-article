@@ -32,13 +32,6 @@ const router = express.Router();
  *           ]
  *         description: Category to generate article for (system will randomly select prompt template)
  *         example: "technology"
- *       - in: query
- *         name: preferWebSearch
- *         required: false
- *         schema:
- *           type: boolean
- *           default: false
- *         description: Use web search to improve freshness (where supported)
  *     responses:
  *       '200':
  *         description: Generated article
@@ -59,9 +52,6 @@ const router = express.Router();
 router.post('/article', async (req, res) => {
   try {
     const categorySlug = req.query.category || req.body?.category;
-    const preferWebSearchRaw = req.query.preferWebSearch ?? req.body?.preferWebSearch ?? false;
-    const preferWebSearch = String(preferWebSearchRaw).toLowerCase() === 'true';
-    
     if (!categorySlug) {
       return res.status(400).json({ error: 'category is required' });
     }
@@ -72,8 +62,8 @@ router.post('/article', async (req, res) => {
     const categoryObj = catRes.rows[0];
 
     // Use createMasterArticle which now uses the category-based prompt system
-    // The prompt system will randomly select from all available templates in that category
-    const { masterArticle } = await createMasterArticle(categoryObj, { preferWebSearch: Boolean(preferWebSearch) });
+    // Web search is disabled as per user preference
+    const { masterArticle } = await createMasterArticle(categoryObj, { preferWebSearch: false });
 
     // Insert article & token usage
     await withTransaction(async (client) => {
@@ -154,9 +144,9 @@ router.post('/translate', async (req, res) => {
     // Fetch the base (English) article
     const artRes = await query(
       `SELECT a.*, c.id AS category_id, c.name AS category_name, c.slug AS category_slug
-       FROM articles a
+       FROM articles_en a
        LEFT JOIN categories c ON c.id = a.category_id
-       WHERE a.slug = $1 AND a.language_code = 'en' LIMIT 1`,
+       WHERE a.slug = $1 LIMIT 1`,
       [slug]
     );
     if (artRes.rowCount === 0) return res.status(404).json({ error: 'Article not found' });
@@ -164,10 +154,12 @@ router.post('/translate', async (req, res) => {
 
     // Check if translation already exists
     const transTbl = articlesTable(language);
-    const existsRes = await query(
-      `SELECT 1 FROM ${transTbl} WHERE slug LIKE $1 || '-%' AND language_code = $2 LIMIT 1`,
-      [slug, language]
-    );
+    const existsQuerySql = transTbl === 'articles'
+      ? `SELECT 1 FROM ${transTbl} WHERE slug LIKE $1 || '-%' AND language_code = $2 LIMIT 1`
+      : `SELECT 1 FROM ${transTbl} WHERE slug LIKE $1 || '-%' LIMIT 1`;
+    
+    const existsParams = transTbl === 'articles' ? [slug, language] : [slug];
+    const existsRes = await query(existsQuerySql, existsParams);
     if (existsRes.rowCount > 0) {
       return res.status(409).json({ error: 'Translation already exists for this language' });
     }
@@ -193,10 +185,9 @@ router.post('/translate', async (req, res) => {
     const tArticle = await generateTranslationArticle({
       lang: language,
       category,
-      masterJson,
-      slugBase: baseArticle.slug,
-      title: baseArticle.title,
-      summary: baseArticle.summary,
+      masterSlug: baseArticle.slug,
+      masterTitle: baseArticle.title,
+      masterSummary: baseArticle.summary,
       imageUrl: baseArticle.image_url,
     });
 

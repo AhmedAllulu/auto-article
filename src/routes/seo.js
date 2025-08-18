@@ -96,13 +96,37 @@ async function generateStaticAndCategoryUrls(base, langs) {
     }
   }
 
-  const catRes = await query(
-    `SELECT c.slug AS slug, a.language_code AS language_code,
-            MAX(COALESCE(a.published_at, a.created_at)) AS lastmod
-     FROM articles a
-     JOIN categories c ON c.id = a.category_id
-     GROUP BY c.slug, a.language_code`
-  );
+  // Query all language-specific tables to get category information
+  const languages = ['en', 'de', 'fr', 'es', 'pt', 'ar', 'hi'];
+  const allCategories = new Map();
+  
+  for (const lang of languages) {
+    const tableName = articlesTable(lang);
+    const catSql = tableName === 'articles'
+      ? `SELECT c.slug AS slug, a.language_code AS language_code,
+                MAX(COALESCE(a.published_at, a.created_at)) AS lastmod
+         FROM ${tableName} a
+         JOIN categories c ON c.id = a.category_id
+         WHERE a.language_code = $1
+         GROUP BY c.slug, a.language_code`
+      : `SELECT c.slug AS slug, '${lang}' AS language_code,
+                MAX(COALESCE(a.published_at, a.created_at)) AS lastmod
+         FROM ${tableName} a
+         JOIN categories c ON c.id = a.category_id
+         GROUP BY c.slug`;
+    
+    const catParams = tableName === 'articles' ? [lang] : [];
+    const catRes = await safeQuery(catSql, catParams);
+    
+    for (const row of catRes.rows) {
+      const key = `${row.slug}-${row.language_code}`;
+      if (!allCategories.has(key) || (row.lastmod && (!allCategories.get(key).lastmod || row.lastmod > allCategories.get(key).lastmod))) {
+        allCategories.set(key, row);
+      }
+    }
+  }
+  
+  const catRes = { rows: Array.from(allCategories.values()) };
   for (const row of catRes.rows) {
     const l = row.language_code || 'en';
     if (!langs.includes(l)) continue;
@@ -117,26 +141,51 @@ async function generateStaticAndCategoryUrls(base, langs) {
 }
 
 async function countArticles(langs) {
-  const { rows } = await query(
-    `SELECT COUNT(*)::bigint AS count
-     FROM articles
-     WHERE language_code = ANY($1)`,
-    [langs]
-  );
-  return Number(rows[0]?.count || 0);
+  let totalCount = 0;
+  
+  for (const lang of langs) {
+    const tableName = articlesTable(lang);
+    const countSql = tableName === 'articles'
+      ? `SELECT COUNT(*)::bigint AS count FROM ${tableName} WHERE language_code = $1`
+      : `SELECT COUNT(*)::bigint AS count FROM ${tableName}`;
+    
+    const countParams = tableName === 'articles' ? [lang] : [];
+    const { rows } = await safeQuery(countSql, countParams);
+    totalCount += Number(rows[0]?.count || 0);
+  }
+  
+  return totalCount;
 }
 
 async function fetchArticlesSlice(base, langs, offset, limit) {
-  const res = await query(
-    `SELECT slug, language_code, COALESCE(published_at, created_at) AS lastmod
-     FROM articles
-     WHERE language_code = ANY($1)
-     ORDER BY COALESCE(published_at, created_at) DESC, id DESC
-     OFFSET $2 LIMIT $3`,
-    [langs, offset, limit]
-  );
+  // Collect articles from all language-specific tables
+  const allArticles = [];
+  
+  for (const lang of langs) {
+    const tableName = articlesTable(lang);
+    const articleSql = tableName === 'articles'
+      ? `SELECT slug, language_code, COALESCE(published_at, created_at) AS lastmod
+         FROM ${tableName}
+         WHERE language_code = $1
+         ORDER BY COALESCE(published_at, created_at) DESC, id DESC`
+      : `SELECT slug, '${lang}' AS language_code, COALESCE(published_at, created_at) AS lastmod
+         FROM ${tableName}
+         ORDER BY COALESCE(published_at, created_at) DESC, id DESC`;
+    
+    const articleParams = tableName === 'articles' ? [lang] : [];
+    const res = await safeQuery(articleSql, articleParams);
+    
+    for (const row of res.rows) {
+      allArticles.push(row);
+    }
+  }
+  
+  // Sort all articles by date and apply offset/limit
+  allArticles.sort((a, b) => new Date(b.lastmod || 0) - new Date(a.lastmod || 0));
+  const slicedArticles = allArticles.slice(offset, offset + limit);
+  
   const urls = [];
-  for (const a of res.rows) {
+  for (const a of slicedArticles) {
     const l = a.language_code || 'en';
     urls.push({
       loc: `${base}/${l}/article/${encodeURIComponent(a.slug)}`,

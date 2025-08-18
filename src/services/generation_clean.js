@@ -11,6 +11,7 @@ import { buildPrompt as buildTranslationPrompt } from '../prompts/translation.js
 import { fetchUnsplashImageUrl } from './unsplash.js';
 import { query, withTransaction } from '../database/index.js';
 import config from '../config/config.js';
+import { articlesTable } from '../utils/articlesTable.js';
 
 // Logging utility
 export function genLog(msg, meta = {}) {
@@ -53,11 +54,24 @@ export function sanitizeHtmlContent(html) {
 
 // Ensure uniqueness of article slugs by appending an incrementing numeric suffix when needed
 async function generateUniqueSlug(baseSlug) {
-  const res = await query(
-    'SELECT slug FROM articles WHERE slug LIKE $1 || \'%\'',
-    [baseSlug]
-  );
-  const existing = new Set(res.rows.map((r) => r.slug));
+  // Check all language-specific tables for existing slugs
+  const languages = ['en', 'de', 'fr', 'es', 'pt', 'ar', 'hi'];
+  const existing = new Set();
+  
+  for (const lang of languages) {
+    const tableName = articlesTable(lang);
+    try {
+      const res = await query(
+        `SELECT slug FROM ${tableName} WHERE slug LIKE $1 || '%'`,
+        [baseSlug]
+      );
+      res.rows.forEach(row => existing.add(row.slug));
+    } catch (err) {
+      // Skip if table doesn't exist yet
+      if (err.code !== '42P01') throw err;
+    }
+  }
+  
   if (!existing.has(baseSlug)) return baseSlug;
   let counter = 2;
   while (existing.has(`${baseSlug}-${counter}`)) counter += 1;
@@ -333,8 +347,11 @@ function assembleHtml(master) {
 
 // Insert article into database
 export async function insertArticle(client, articleData) {
+  const languageCode = articleData.languageCode || 'en';
+  const tableName = articlesTable(languageCode);
+  
   const insertSql = `
-    INSERT INTO articles (title, slug, content, summary, meta_title, meta_description, canonical_url, image_url, reading_time, language_code, category_id, published_at)
+    INSERT INTO ${tableName} (title, slug, content, summary, meta_title, meta_description, canonical_url, image_url, reading_time, language_code, category_id, published_at)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
     RETURNING id
   `;
@@ -349,7 +366,7 @@ export async function insertArticle(client, articleData) {
     articleData.canonicalUrl,
     articleData.imageUrl,
     articleData.readingTime,
-    articleData.languageCode || 'en',
+    languageCode,
     articleData.category.id,
     articleData.publishedAt
   ];
@@ -793,9 +810,9 @@ async function getTodaysArticlesForTranslation() {
             a.category_id,
             c.slug AS category_slug,
             c.name AS category_name
-     FROM articles a
+     FROM articles_en a
      LEFT JOIN categories c ON c.id = a.category_id
-     WHERE a.language_code = 'en' AND a.published_at::date = CURRENT_DATE
+     WHERE a.published_at::date = CURRENT_DATE
      ORDER BY a.id ASC`
   );
   return res.rows.map((r) => ({
@@ -809,11 +826,20 @@ async function getTodaysArticlesForTranslation() {
 }
 
 async function getExistingTranslationLanguagesForMaster(slugBase) {
-  const res = await query(
-    `SELECT language_code FROM articles WHERE slug LIKE $1 || '-%'`,
-    [slugBase]
-  );
-  return res.rows.map((r) => r.language_code);
+  // Check all language-specific tables for existing translations
+  const languages = ['en', 'de', 'fr', 'es', 'pt', 'ar', 'hi'];
+  const existingLanguages = new Set();
+  
+  for (const lang of languages) {
+    const tableName = articlesTable(lang);
+    const res = await query(
+      `SELECT language_code FROM ${tableName} WHERE slug LIKE $1 || '-%'`,
+      [slugBase]
+    );
+    res.rows.forEach(row => existingLanguages.add(row.language_code));
+  }
+  
+  return Array.from(existingLanguages);
 }
 
 // Main generation batch function

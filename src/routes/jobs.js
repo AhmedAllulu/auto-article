@@ -48,12 +48,25 @@ router.get('/today', async (_req, res) => {
 
     // Counts for masters and translations published today
     const { rows: mastersRows } = await query(
-      `SELECT COUNT(*)::int AS count FROM articles WHERE language_code = 'en' AND published_at::date = CURRENT_DATE`
+      `SELECT COUNT(*)::int AS count FROM articles_en WHERE published_at::date = CURRENT_DATE`
     );
     const masters = mastersRows[0]?.count || 0;
 
+    // Count translations from all language-specific tables except English
     const { rows: transRows } = await query(
-      `SELECT COUNT(*)::int AS count FROM articles WHERE language_code <> 'en' AND published_at::date = CURRENT_DATE`
+      `SELECT COUNT(*)::int AS count FROM (
+        SELECT 1 FROM articles_de WHERE published_at::date = CURRENT_DATE
+        UNION ALL
+        SELECT 1 FROM articles_fr WHERE published_at::date = CURRENT_DATE
+        UNION ALL
+        SELECT 1 FROM articles_es WHERE published_at::date = CURRENT_DATE
+        UNION ALL
+        SELECT 1 FROM articles_pt WHERE published_at::date = CURRENT_DATE
+        UNION ALL
+        SELECT 1 FROM articles_ar WHERE published_at::date = CURRENT_DATE
+        UNION ALL
+        SELECT 1 FROM articles_hi WHERE published_at::date = CURRENT_DATE
+      ) AS translations`
     );
     const translations = transRows[0]?.count || 0;
 

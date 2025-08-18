@@ -8,6 +8,7 @@
     "start": "NODE_ENV=production node src/server.js",
     "build": "echo 'Build completed - ready for PM2 deployment'",
     "migrate": "node scripts/migrate.js",
+    "migrate:views": "node scripts/add-view-tracking.js",
     "seed": "node scripts/seed-categories.js",
     "seed:category-translations": "node scripts/seed-category-translations.js",
     "import:csv": "node scripts/import-articles-from-csv.js /var/www/html/auto-article/Articles.csv",

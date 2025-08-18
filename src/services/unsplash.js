@@ -13,14 +13,14 @@ async function isUnsplashPhotoUsed({ baseUrl, photoId }) {
     // Prefer searching by photoId if provided (more robust)
     if (photoId) {
       const res = await query(
-        'SELECT 1 FROM articles WHERE image_url LIKE $1 LIMIT 1',
+        'SELECT 1 FROM articles_en WHERE image_url LIKE $1 LIMIT 1',
         [`%${photoId}%`]
       );
       if (res.rows.length > 0) return true;
     }
     if (baseUrl) {
       const res2 = await query(
-        'SELECT 1 FROM articles WHERE image_url LIKE $1 LIMIT 1',
+        'SELECT 1 FROM articles_en WHERE image_url LIKE $1 LIMIT 1',
         [`${baseUrl}%`]
       );
       return res2.rows.length > 0;
