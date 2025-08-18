@@ -17,7 +17,7 @@ router.use(autoTrackViews);
  * /articles/latest:
  *   get:
  *     tags: [Articles]
- *     summary: Get latest articles for the requested language
+ *     summary: Get latest articles for the requested language with pagination
  *     parameters:
  *       - $ref: '#/components/parameters/AcceptLanguage'
  *       - in: query
@@ -28,13 +28,51 @@ router.use(autoTrackViews);
  *           minimum: 1
  *           maximum: 200
  *           default: 12
+ *       - in: query
+ *         name: page
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *       - in: query
+ *         name: offset
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *           default: 0
  *     responses:
  *       '200':
- *         description: List of latest articles
+ *         description: List of latest articles with pagination info
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/ApiResponseArticleList'
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Article'
+ *                 language:
+ *                   type: string
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     page:
+ *                       type: integer
+ *                     limit:
+ *                       type: integer
+ *                     offset:
+ *                       type: integer
+ *                     total:
+ *                       type: integer
+ *                     pages:
+ *                       type: integer
+ *                     hasNext:
+ *                       type: boolean
+ *                     hasPrev:
+ *                       type: boolean
  *       '500':
  *         description: Failed to load latest articles
  *         content:
@@ -45,9 +83,26 @@ router.use(autoTrackViews);
 router.get('/latest', async (req, res) => {
   const language = resolveLanguage(req, config.languages);
   const rawLimit = Number(req.query.limit);
+  const rawPage = Number(req.query.page);
+  const rawOffset = Number(req.query.offset);
+  
   const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(200, Math.trunc(rawLimit))) : 12;
+  const page = Number.isFinite(rawPage) ? Math.max(1, Math.trunc(rawPage)) : 1;
+  const offset = Number.isFinite(rawOffset) ? Math.max(0, Math.trunc(rawOffset)) : (page - 1) * limit;
+  
   try {
     const tbl = articlesTable(language);
+    
+    // Get total count for pagination
+    const countResult = await query(
+      `SELECT COUNT(*) as total 
+       FROM ${tbl} a 
+       WHERE a.language_code = $1`,
+      [language]
+    );
+    const total = parseInt(countResult.rows[0].total) || 0;
+    
+    // Get articles with pagination
     const result = await query(
       `SELECT 
          a.id,
@@ -58,6 +113,10 @@ router.get('/latest', async (req, res) => {
          a.image_url,
          a.language_code,
          a.category_id,
+         a.reading_time_minutes,
+         a.total_views,
+         a.unique_views,
+         a.trending_score,
          c.name AS category_name,
          c.slug AS category_slug,
          a.published_at,
@@ -66,13 +125,31 @@ router.get('/latest', async (req, res) => {
        LEFT JOIN categories c ON c.id = a.category_id
        WHERE a.language_code = $1
        ORDER BY COALESCE(a.published_at, a.created_at) DESC, a.id DESC
-       LIMIT $2`,
-      [language, limit]
+       LIMIT $2 OFFSET $3`,
+      [language, limit, offset]
     );
+    
+    const pages = Math.ceil(total / limit);
+    const hasNext = page < pages;
+    const hasPrev = page > 1;
+    
     res.set('Vary', 'Accept-Language');
     res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
-    res.json({ data: result.rows, language });
+    res.json({ 
+      data: result.rows, 
+      language,
+      pagination: {
+        page,
+        limit,
+        offset,
+        total,
+        pages,
+        hasNext,
+        hasPrev
+      }
+    });
   } catch (err) {
+    console.error('[articles/latest] Error:', err);
     res.status(500).json({ error: 'Failed to load latest articles' });
   }
 });

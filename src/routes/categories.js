@@ -100,8 +100,28 @@ router.get('/:id/articles', async (req, res) => {
   const language = resolveLanguage(req, config.languages);
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
+  
+  // Pagination parameters
+  const rawLimit = Number(req.query.limit);
+  const rawPage = Number(req.query.page);
+  const rawOffset = Number(req.query.offset);
+  
+  const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(200, Math.trunc(rawLimit))) : 20;
+  const page = Number.isFinite(rawPage) ? Math.max(1, Math.trunc(rawPage)) : 1;
+  const offset = Number.isFinite(rawOffset) ? Math.max(0, Math.trunc(rawOffset)) : (page - 1) * limit;
+  
   try {
     const tbl = articlesTable(language);
+    
+    // Get total count for pagination
+    const countSql = tbl === 'articles'
+      ? `SELECT COUNT(*) as total FROM ${tbl} WHERE category_id = $1 AND language_code = $2`
+      : `SELECT COUNT(*) as total FROM ${tbl} WHERE category_id = $1`;
+    
+    const countParams = tbl === 'articles' ? [id, language] : [id];
+    const countResult = await query(countSql, countParams);
+    const total = parseInt(countResult.rows[0].total) || 0;
+    
     // For language-specific tables, we don't need to filter by language_code
     const querySql = tbl === 'articles'
       ? `SELECT 
@@ -116,6 +136,9 @@ router.get('/:id/articles', async (req, res) => {
            meta_description,
            canonical_url,
            reading_time_minutes,
+           total_views,
+           unique_views,
+           trending_score,
            ai_model,
            ai_prompt,
            ai_tokens_input,
@@ -128,8 +151,8 @@ router.get('/:id/articles', async (req, res) => {
            created_at
          FROM ${tbl} 
          WHERE category_id = $1 AND language_code = $2
-         ORDER BY created_at DESC 
-         LIMIT 200`
+         ORDER BY COALESCE(published_at, created_at) DESC 
+         LIMIT $3 OFFSET $4`
       : `SELECT 
            id,
            title,
@@ -142,6 +165,9 @@ router.get('/:id/articles', async (req, res) => {
            meta_description,
            canonical_url,
            reading_time_minutes,
+           total_views,
+           unique_views,
+           trending_score,
            ai_model,
            ai_prompt,
            ai_tokens_input,
@@ -154,11 +180,15 @@ router.get('/:id/articles', async (req, res) => {
            created_at
          FROM ${tbl} 
          WHERE category_id = $1
-         ORDER BY created_at DESC 
-         LIMIT 200`;
+         ORDER BY COALESCE(published_at, created_at) DESC 
+         LIMIT $2 OFFSET $3`;
     
-    const queryParams = tbl === 'articles' ? [id, language] : [id];
+    const queryParams = tbl === 'articles' ? [id, language, limit, offset] : [id, limit, offset];
     const result = await query(querySql, queryParams);
+    
+    const pages = Math.ceil(total / limit);
+    const hasNext = page < pages;
+    const hasPrev = page > 1;
     
     // Track category view when viewing category articles
     if (res.trackView && result.rows.length > 0) {
@@ -175,7 +205,19 @@ router.get('/:id/articles', async (req, res) => {
     
     res.set('Vary', 'Accept-Language');
     res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
-    res.json({ data: result.rows, language });
+    res.json({ 
+      data: result.rows, 
+      language,
+      pagination: {
+        page,
+        limit,
+        offset,
+        total,
+        pages,
+        hasNext,
+        hasPrev
+      }
+    });
   } catch (err) {
     res.status(500).json({ error: 'Failed to load articles' });
   }
