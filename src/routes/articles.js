@@ -264,10 +264,10 @@ router.get('/slug/:slug', async (req, res) => {
     // Track article view
     if (res.trackView) {
       await res.trackView('article', {
-        id: article.id,
+        id: parseInt(article.id), // Ensure ID is integer
         slug: article.slug,
         language_code: article.language_code || language,
-        category_id: article.category_id
+        category_id: parseInt(article.category_id) || null // Ensure category_id is integer
       });
     }
     

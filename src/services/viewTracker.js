@@ -23,6 +23,13 @@ function calculateTrendingScore(totalViews, uniqueViews, daysOld, recentViews24h
 
 // Check if view should be counted as unique
 async function isUniqueView(type, contentId, userIp, period = 'daily') {
+  // Validate input parameters
+  const numericContentId = parseInt(contentId);
+  if (!Number.isInteger(numericContentId) || numericContentId <= 0) {
+    console.error(`Invalid contentId for ${type} tracking:`, contentId);
+    return false; // Don't count as unique if ID is invalid
+  }
+  
   const table = type === 'article' ? 'article_views' : 'category_views';
   const column = type === 'article' ? 'article_id' : 'category_id';
   
@@ -30,13 +37,18 @@ async function isUniqueView(type, contentId, userIp, period = 'daily') {
     ? "viewed_at::date = CURRENT_DATE"
     : "viewed_at >= CURRENT_DATE - INTERVAL '30 days'";
   
-  const result = await query(`
-    SELECT COUNT(*) as count 
-    FROM ${table} 
-    WHERE ${column} = $1 AND user_ip = $2 AND ${timeCondition}
-  `, [contentId, userIp]);
-  
-  return parseInt(result.rows[0].count) === 0;
+  try {
+    const result = await query(`
+      SELECT COUNT(*) as count 
+      FROM ${table} 
+      WHERE ${column} = $1 AND user_ip = $2 AND ${timeCondition}
+    `, [numericContentId, userIp]);
+    
+    return parseInt(result.rows[0].count) === 0;
+  } catch (error) {
+    console.error(`Error checking unique view for ${type} ${numericContentId}:`, error.message);
+    return false; // Default to not unique on error
+  }
 }
 
 /**
@@ -44,12 +56,27 @@ async function isUniqueView(type, contentId, userIp, period = 'daily') {
  */
 export async function trackArticleView(req, articleData) {
   try {
+    // Validate input data
+    if (!articleData || !articleData.id) {
+      console.error('Invalid article data for tracking:', articleData);
+      return;
+    }
+    
     const userIp = req.ip || req.connection.remoteAddress || 'unknown';
     const userAgent = req.get('User-Agent') || 'unknown';
     const referrer = req.get('Referer') || req.get('Referrer') || null;
     const sessionId = generateSessionId(userIp, userAgent);
     
-    const { id: articleId, slug, language_code, category_id } = articleData;
+    // Ensure IDs are properly converted to integers
+    const articleId = parseInt(articleData.id);
+    const categoryId = articleData.category_id ? parseInt(articleData.category_id) : null;
+    
+    if (!Number.isInteger(articleId) || articleId <= 0) {
+      console.error('Invalid article ID for tracking:', articleData.id);
+      return;
+    }
+    
+    const { slug, language_code } = articleData;
     
     // Check if this is a unique view
     const isDailyUnique = await isUniqueView('article', articleId, userIp, 'daily');
@@ -63,7 +90,7 @@ export async function trackArticleView(req, articleData) {
         is_unique_daily, is_unique_monthly
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     `, [
-      articleId, slug, language_code, category_id,
+      articleId, slug, language_code, categoryId,
       userIp, userAgent, referrer, sessionId,
       isDailyUnique, isMonthlyUnique
     ]);
@@ -80,7 +107,7 @@ export async function trackArticleView(req, articleData) {
     `, [isDailyUnique ? 1 : 0, articleId]);
     
     // Update category counters if category exists
-    if (category_id) {
+    if (categoryId) {
       await query(`
         UPDATE categories 
         SET 
@@ -88,7 +115,7 @@ export async function trackArticleView(req, articleData) {
           unique_views = unique_views + $1,
           last_viewed = now()
         WHERE id = $2
-      `, [isDailyUnique ? 1 : 0, category_id]);
+      `, [isDailyUnique ? 1 : 0, categoryId]);
     }
     
     console.log(`📈 Tracked view: Article ${slug} (${language_code}) - Unique: ${isDailyUnique}`);
@@ -104,13 +131,27 @@ export async function trackArticleView(req, articleData) {
  */
 export async function trackCategoryView(req, categoryData) {
   try {
+    // Validate input data
+    if (!categoryData || !categoryData.id) {
+      console.error('Invalid category data for tracking:', categoryData);
+      return;
+    }
+    
     const userIp = req.ip || req.connection.remoteAddress || 'unknown';
     const userAgent = req.get('User-Agent') || 'unknown';
     const referrer = req.get('Referer') || req.get('Referrer') || null;
     const sessionId = generateSessionId(userIp, userAgent);
     const language = req.headers['accept-language']?.split(',')[0]?.split('-')[0] || 'en';
     
-    const { id: categoryId, slug } = categoryData;
+    // Ensure ID is properly converted to integer
+    const categoryId = parseInt(categoryData.id);
+    
+    if (!Number.isInteger(categoryId) || categoryId <= 0) {
+      console.error('Invalid category ID for tracking:', categoryData.id);
+      return;
+    }
+    
+    const { slug } = categoryData;
     
     // Check if this is a unique view
     const isDailyUnique = await isUniqueView('category', categoryId, userIp, 'daily');
