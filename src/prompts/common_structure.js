@@ -21,7 +21,13 @@ SEO REQUIREMENTS:
 - Add 3-5 high-quality external links to authoritative sources
 - Structure content for featured snippets
 
-IMPORTANT: Place external links ONLY in the "External Resources" section at the end. Do NOT include URLs within the main content sections or FAQ answers. Reference sources by name only in the body text, then list all URLs together in the External Resources section.
+CRITICAL INSTRUCTION: External links and URLs must ONLY appear in the "External Resources" section at the very end of the article. Do NOT include any URLs, links, or external resource lists within:
+- Main content sections
+- FAQ answers
+- Key takeaways
+- Any other section
+
+FAQ answers must contain only direct, helpful responses to the questions - never external links or resource lists. Reference sources by name only in the body text if needed, then list all URLs together in the External Resources section.
 
 FORMAT YOUR RESPONSE AS:
 
@@ -41,6 +47,7 @@ FORMAT YOUR RESPONSE AS:
 ## [Additional sections as needed]
 
 ## Frequently Asked Questions
+NOTE: FAQ answers must be direct responses only - NO external links or URLs here.
 
 ### [Question 1]?
 [Detailed answer 50-60 words]

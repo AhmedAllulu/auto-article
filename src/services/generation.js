@@ -342,6 +342,21 @@ function extractFromNaturalText(content, categoryName) {
       continue;
     }
     if (line.trim() && !line.match(/^\*\*|^#/)) {
+      // Special filtering for FAQ sections: exclude lines that contain URLs or look like external links
+      if (inFaq && currentQuestion) {
+        // Skip lines that contain URLs
+        if (line.includes('http://') || line.includes('https://')) {
+          continue;
+        }
+        // Skip lines that look like external resource lists (start with dash and contain common site names)
+        if (line.match(/^-\s+.*(?:vogue|allure|harper|elle|nytimes|cnn|bbc|wikipedia|investopedia|bankrate|nerdwallet|fidelity)/i)) {
+          continue;
+        }
+        // Skip lines that are just site names followed by colons or dashes
+        if (line.match(/^(?:vogue|allure|harper|elle|nytimes|cnn|bbc|wikipedia|investopedia|bankrate|nerdwallet|fidelity)[\s:—-]/i)) {
+          continue;
+        }
+      }
       currentContent.push(line.trim());
     }
   }
@@ -356,10 +371,34 @@ function extractFromNaturalText(content, categoryName) {
     });
   }
   if (currentQuestion && currentContent.length) {
-    result.faq.push({
-      q: currentQuestion,
-      a: currentContent.join('\n').trim()
-    });
+    // Clean up FAQ answer: remove any remaining URLs or external link references
+    let faqAnswer = currentContent.join('\n').trim();
+    // Remove lines containing URLs or external resource references
+    faqAnswer = faqAnswer.split('\n')
+      .filter(line => {
+        const trimmedLine = line.trim();
+        // Skip empty lines
+        if (!trimmedLine) return false;
+        // Skip lines containing URLs
+        if (trimmedLine.includes('http://') || trimmedLine.includes('https://')) return false;
+        // Skip lines that look like external resource lists
+        if (trimmedLine.match(/^-\s+.*(?:vogue|allure|harper|elle|nytimes|cnn|bbc|wikipedia|investopedia|bankrate|nerdwallet|fidelity|forbes|wsj|bloomberg)/i)) return false;
+        // Skip lines that are just site names
+        if (trimmedLine.match(/^(?:vogue|allure|harper|elle|nytimes|cnn|bbc|wikipedia|investopedia|bankrate|nerdwallet|fidelity|forbes|wsj|bloomberg)[\s:—-]|^(?:vogue|allure|harper|elle|nytimes|cnn|bbc|wikipedia|investopedia|bankrate|nerdwallet|fidelity|forbes|wsj|bloomberg)$/i)) return false;
+        // Skip notes about external resources
+        if (trimmedLine.match(/^\(Note:.*External.*Resource.*\)/i)) return false;
+        // Skip lines that are just dashes or bullets
+        if (trimmedLine.match(/^[-•*]\s*$/)) return false;
+        return true;
+      })
+      .join('\n').trim();
+
+    if (faqAnswer) {
+      result.faq.push({
+        q: currentQuestion,
+        a: faqAnswer
+      });
+    }
   }
 
   // Generate fallbacks
