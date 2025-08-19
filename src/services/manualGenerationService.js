@@ -20,6 +20,9 @@ import { genLog, genError } from './logger.js';
 
 const ARTICLES_PER_CATEGORY_PER_DAY = 2;
 
+// Process lock to prevent concurrent generation
+let generationInProgress = false;
+
 /**
  * Get all supported languages from config, excluding English
  */
@@ -67,7 +70,7 @@ async function getCategoriesNeedingArticles() {
 }
 
 /**
- * Generate articles for a specific category and translate them
+ * Generate articles for a specific category and translate them with atomic quota checking
  */
 async function processCategory(category, supportedLanguages) {
   const startTime = Date.now();
@@ -78,27 +81,51 @@ async function processCategory(category, supportedLanguages) {
     languages: [],
     errors: []
   };
-  
-  genLog('Processing category for manual generation', { 
-    category: category.slug, 
-    needed: category.needed 
+
+  genLog('Processing category for manual generation', {
+    category: category.slug,
+    needed: category.needed
   });
-  
+
   try {
-    // Generate the needed articles for this category
+    // Generate the needed articles for this category with atomic quota checking
     for (let i = 0; i < category.needed; i++) {
       try {
-        genLog('Generating master article', { 
-          category: category.slug, 
+        genLog('Generating master article with quota check', {
+          category: category.slug,
           articleNumber: i + 1,
-          totalNeeded: category.needed 
+          totalNeeded: category.needed
         });
-        
-        // Generate master article in English
-        const { masterArticle } = await createMasterArticle(category, { preferWebSearch: false });
-        
-        // Insert master article with transaction
+
+        // ATOMIC QUOTA CHECK: Check quota inside transaction to prevent race conditions
+        let masterArticle = null;
+        let quotaExceeded = false;
+
         await withTransaction(async (client) => {
+          // Re-check quota inside transaction for atomic operation
+          const { rows } = await client.query(
+            `SELECT COUNT(*)::int AS count FROM articles_en
+             WHERE category_id = $1 AND published_at::date = CURRENT_DATE`,
+            [category.id]
+          );
+
+          const currentCount = rows[0]?.count || 0;
+
+          if (currentCount >= ARTICLES_PER_CATEGORY_PER_DAY) {
+            quotaExceeded = true;
+            genLog('Quota already met for category, skipping', {
+              category: category.slug,
+              currentCount,
+              quota: ARTICLES_PER_CATEGORY_PER_DAY
+            });
+            return;
+          }
+
+          // Generate article only if quota not exceeded
+          const { masterArticle: generatedArticle } = await createMasterArticle(category, { preferWebSearch: false });
+          masterArticle = generatedArticle;
+
+          // Insert article atomically with quota check
           await insertArticle(client, masterArticle);
           await updateDailyTokenUsage(client, [{
             prompt_tokens: masterArticle.ai_tokens_input,
@@ -106,11 +133,24 @@ async function processCategory(category, supportedLanguages) {
           }]);
           await incrementJobCount(client, 1);
         });
-        
+
+        if (quotaExceeded) {
+          genLog('Stopping category processing - quota exceeded', {
+            category: category.slug,
+            articlesGenerated: result.articlesGenerated
+          });
+          break; // Stop processing this category
+        }
+
+        if (!masterArticle) {
+          genError('Master article generation failed', { category: category.slug });
+          continue;
+        }
+
         result.articlesGenerated++;
-        genLog('Master article generated successfully', { 
+        genLog('Master article generated successfully', {
           slug: masterArticle.slug,
-          category: category.slug 
+          category: category.slug
         });
         
         // Generate translations for all supported languages
@@ -199,12 +239,44 @@ async function processCategory(category, supportedLanguages) {
 
 /**
  * Main manual generation function that implements the exact specified logic
+ *
+ * IMPORTANT: This function BYPASSES ALL TIME-BASED RESTRICTIONS
+ * - Used by manual Swagger endpoints (POST /generation/run)
+ * - Used by individual generation endpoints (POST /generate/article, POST /generate/translate)
+ * - Always runs regardless of optimal timing windows
+ * - Still respects daily quotas (2 English articles per category per day)
  */
 export async function runManualGeneration() {
   const startTime = Date.now();
-  
-  genLog('Manual generation started - bypassing time restrictions');
-  
+
+  // Check if generation is already in progress
+  if (generationInProgress) {
+    genLog('Manual generation already in progress, skipping');
+    return {
+      status: 'skipped',
+      reason: 'generation_in_progress',
+      message: 'Generation already in progress',
+      details: {
+        categoriesProcessed: [],
+        totalArticlesGenerated: 0,
+        totalTranslationsCompleted: 0,
+        executionTimeMs: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+        skippedReason: 'Another generation process is already running'
+      }
+    };
+  }
+
+  // Set lock
+  generationInProgress = true;
+  genLog('🚀 Manual generation started - BYPASSING ALL TIME RESTRICTIONS', {
+    trigger: 'manual',
+    bypassTiming: true,
+    currentTime: new Date().toISOString(),
+    currentHour: new Date().getHours(),
+    currentDay: new Date().getDay()
+  });
+
   try {
     // Get all categories and their current article counts
     const allCategories = await getCategoriesNeedingArticles();
@@ -300,16 +372,16 @@ export async function runManualGeneration() {
       categoriesProcessed: processedCategories.length,
       executionTimeMs: response.details.executionTimeMs
     });
-    
+
     return response;
-    
+
   } catch (error) {
     genError('Manual generation failed', {
       error: error.message,
       stack: error.stack,
       executionTimeMs: Date.now() - startTime
     });
-    
+
     return {
       status: 'error',
       message: 'Manual generation failed',
@@ -322,6 +394,10 @@ export async function runManualGeneration() {
         error: error.message
       }
     };
+  } finally {
+    // Always release the lock
+    generationInProgress = false;
+    genLog('Manual generation lock released');
   }
 }
 

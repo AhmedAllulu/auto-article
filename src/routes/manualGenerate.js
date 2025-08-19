@@ -9,6 +9,7 @@ import {
   withDatabaseErrorHandling,
   withApiErrorHandling
 } from '../services/errorHandler.js';
+import { genLog } from '../services/logger.js';
 
 const router = express.Router();
 
@@ -17,8 +18,15 @@ const router = express.Router();
  * /generate/article:
  *   post:
  *     tags: [Generation]
- *     summary: Generate a single article for a specific category
- *     description: Creates a new article in the specified category using AI generation. Generates content in English and stores it in the articles_en table. Accepts category either as query parameter or in request body.
+ *     summary: Generate a single article for a specific category (Manual - Bypasses Time Restrictions)
+ *     description: |
+ *       Creates a new article in the specified category using AI generation.
+ *
+ *       **IMPORTANT**: This manual endpoint bypasses all time-based restrictions and can be used at any time.
+ *       - Generates content in English and stores it in the articles_en table
+ *       - Respects daily quotas (max 2 English articles per category per day)
+ *       - Can be triggered through Swagger UI regardless of optimal timing windows
+ *       - Accepts category either as query parameter or in request body
  *     parameters:
  *       - in: query
  *         name: category
@@ -73,6 +81,14 @@ const router = express.Router();
  */
 router.post('/article', async (req, res) => {
   try {
+    // MANUAL ENDPOINT: Bypasses all time-based restrictions
+    genLog('🚀 Manual article generation started - BYPASSING TIME RESTRICTIONS', {
+      endpoint: 'POST /generate/article',
+      trigger: 'manual_swagger',
+      bypassTiming: true,
+      currentTime: new Date().toISOString()
+    });
+
     // Validate input
     const categorySlug = req.query.category || req.body?.category;
     validateRequired({ category: categorySlug }, ['category'], 'article generation');
@@ -125,8 +141,15 @@ router.post('/article', async (req, res) => {
  * /generate/translate:
  *   post:
  *     tags: [Generation]
- *     summary: Generate a translation of an existing English article
- *     description: Creates a translated version of an existing English article into the specified target language. The translation preserves HTML structure and updates metadata appropriately.
+ *     summary: Generate a translation of an existing English article (Manual - Bypasses Time Restrictions)
+ *     description: |
+ *       Creates a translated version of an existing English article into the specified target language.
+ *
+ *       **IMPORTANT**: This manual endpoint bypasses all time-based restrictions and can be used at any time.
+ *       - Translates existing English articles to target languages (de, fr, es, pt, ar, hi)
+ *       - Preserves HTML structure and updates metadata appropriately
+ *       - Can be triggered through Swagger UI regardless of optimal timing windows
+ *       - Does not count toward English article quotas (translations are unlimited)
  *     requestBody:
  *       required: true
  *       content:
@@ -167,6 +190,14 @@ router.post('/article', async (req, res) => {
  */
 router.post('/translate', async (req, res) => {
   try {
+    // MANUAL ENDPOINT: Bypasses all time-based restrictions
+    genLog('🚀 Manual translation started - BYPASSING TIME RESTRICTIONS', {
+      endpoint: 'POST /generate/translate',
+      trigger: 'manual_swagger',
+      bypassTiming: true,
+      currentTime: new Date().toISOString()
+    });
+
     // Validate input
     const { slug, language } = req.body || {};
     validateRequired({ slug, language }, ['slug', 'language'], 'translation request');

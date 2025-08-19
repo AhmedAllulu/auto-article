@@ -26,16 +26,82 @@ export class HTMLTranslator {
   }
 
   /**
+   * Translate combined content (HTML + metadata) to minimize API requests
+   * This method combines HTML content with title, summary, and meta description
+   * to reduce API calls from 4+ per article to just 1-2 per article
+   */
+  async translateCombinedContent(combinedContent) {
+    const { html, title, summary, metaDescription } = combinedContent;
+
+    if (!html) {
+      return {
+        html: '',
+        title: title || '',
+        summary: summary || '',
+        metaDescription: metaDescription || ''
+      };
+    }
+
+    // Create a structured content block that includes all text to translate
+    const structuredContent = this.createStructuredContent(html, title, summary, metaDescription);
+
+    // Increased token limits to handle larger articles with fewer requests
+    const MAX_TOKENS_PER_CALL = 15000; // Much larger chunks to reduce API calls
+    const MAX_TOKENS_TWO_PARTS = MAX_TOKENS_PER_CALL * 2; // 30k tokens
+
+    // ─── Helper to estimate tokens (rough: 1 token ≈ 4 chars) ────────────
+    const approxTokens = (str) => Math.ceil(str.length / 4);
+    const totalTokens = approxTokens(structuredContent);
+
+    let translatedStructured;
+
+    // ─── 1) Single-shot when it fits ─────────────────────────────────────
+    if (totalTokens <= MAX_TOKENS_PER_CALL) {
+      translatedStructured = (await this.translateWhole(structuredContent)).translated;
+    }
+    // ─── 2) Two-part translation when still under 2× window ──────────────
+    else if (totalTokens <= MAX_TOKENS_TWO_PARTS) {
+      const { part1, part2 } = this.splitStructuredContentInTwo(structuredContent);
+      const t1 = await this.translateWhole(part1);
+      const t2 = await this.translateWhole(part2);
+      translatedStructured = t1.translated + t2.translated;
+    }
+    // ─── 3) Fallback: use original HTML translation method for very large content ──
+    else {
+      // For extremely large content, fall back to HTML-only translation
+      // and translate metadata separately (still better than 4+ calls)
+      const translatedHtml = await this.translateHTML(html);
+      const translatedTitle = await this.translateTextSegment(title || '');
+      const translatedSummary = await this.translateTextSegment(summary || '');
+      const translatedMetaDesc = await this.translateTextSegment(metaDescription || '');
+
+      return {
+        html: translatedHtml,
+        title: translatedTitle,
+        summary: translatedSummary,
+        metaDescription: translatedMetaDesc
+      };
+    }
+
+    // Parse the translated structured content back into components
+    return this.parseTranslatedStructuredContent(translatedStructured, html, title, summary, metaDescription);
+  }
+
+  /**
    * Translate HTML content while preserving exact structure
-   * Strategy for GPT-5-nano (smaller context window)
-   *   1. If the whole article fits (≈ <3.5k tokens) → single shot
-   *   2. If it fits in two halves (≈ <7k tokens) → split in two requests
-   *   3. Otherwise (very rare) fall back to paragraph-block segmentation
+   * Strategy optimized to minimize API requests:
+   *   1. If the whole article fits (≈ <15k tokens) → single shot
+   *   2. If it fits in two halves (≈ <30k tokens) → split in two requests
+   *   3. If it fits in four parts (≈ <60k tokens) → split in four requests
+   *   4. Otherwise fall back to larger chunk-based segmentation
    */
   async translateHTML(htmlContent) {
     if (!htmlContent) return '';
 
-    const MAX_TOKENS_PER_CALL = 3500; // safe margin for gpt-5-nano (4k ctx?)
+    // Increased token limits to handle larger articles with fewer requests
+    const MAX_TOKENS_PER_CALL = 15000; // Much larger chunks to reduce API calls
+    const MAX_TOKENS_TWO_PARTS = MAX_TOKENS_PER_CALL * 2; // 30k tokens
+    const MAX_TOKENS_FOUR_PARTS = MAX_TOKENS_PER_CALL * 4; // 60k tokens
 
     // ─── Helper to estimate tokens (rough: 1 token ≈ 4 chars) ────────────
     const approxTokens = (str) => Math.ceil(str.length / 4);
@@ -47,35 +113,29 @@ export class HTMLTranslator {
     }
 
     // ─── 2) Two-part translation when still under 2× window ──────────────
-    if (totalTokens <= MAX_TOKENS_PER_CALL * 2) {
+    if (totalTokens <= MAX_TOKENS_TWO_PARTS) {
       const { part1, part2 } = this.splitInTwo(htmlContent);
       const t1 = await this.translateWhole(part1);
       const t2 = await this.translateWhole(part2);
       return t1.translated + t2.translated;
     }
 
-    // ─── 3) Fallback: previous paragraph-block segmentation ──────────────
-    // Split content into HTML tags and text segments
-    const segments = this.parseHTMLSegments(htmlContent);
+    // ─── 3) Four-part translation for very large articles ────────────────
+    if (totalTokens <= MAX_TOKENS_FOUR_PARTS) {
+      const parts = this.splitIntoFourParts(htmlContent);
+      const translatedParts = await Promise.all(
+        parts.map(part => this.translateWhole(part))
+      );
+      return translatedParts.map(p => p.translated).join('');
+    }
 
-    // Translate segments concurrently while preserving order
-    const translatedSegments = await Promise.all(
-      segments.map(async (segment) => {
-        if (segment.isText && segment.content.trim()) {
-          if (this.shouldSkipTranslation(segment.content)) {
-            return segment.content;
-          }
-          return this.translateTextSegment(segment.content);
-        }
-        if (segment.isScript) {
-          return this.translateJsonLd(segment.content);
-        }
-        // Non-text HTML tag, return as-is
-        return segment.content;
-      })
+    // ─── 4) Fallback: chunk-based segmentation for extremely large content ──
+    // Split into larger meaningful chunks instead of tiny segments
+    const chunks = this.splitIntoLargeChunks(htmlContent, MAX_TOKENS_PER_CALL);
+    const translatedChunks = await Promise.all(
+      chunks.map(chunk => this.translateWhole(chunk))
     );
-
-    return translatedSegments.join('');
+    return translatedChunks.map(c => c.translated).join('');
   }
 
   /**
@@ -119,6 +179,72 @@ RULES
     const part1 = html.slice(0, splitIdx + 1);
     const part2 = html.slice(splitIdx + 1);
     return { part1, part2 };
+  }
+
+  /**
+   * Split HTML into four parts at tag boundaries
+   */
+  splitIntoFourParts(html) {
+    const quarterLength = Math.floor(html.length / 4);
+
+    // Find split points at tag boundaries
+    const findSplitPoint = (startPos) => {
+      let splitIdx = html.indexOf('>', startPos);
+      if (splitIdx === -1) {
+        splitIdx = startPos; // fallback
+      }
+      return splitIdx + 1;
+    };
+
+    const split1 = findSplitPoint(quarterLength);
+    const split2 = findSplitPoint(quarterLength * 2);
+    const split3 = findSplitPoint(quarterLength * 3);
+
+    return [
+      html.slice(0, split1),
+      html.slice(split1, split2),
+      html.slice(split2, split3),
+      html.slice(split3)
+    ];
+  }
+
+  /**
+   * Split HTML into large chunks based on token limit
+   * This replaces the old segment-based approach that created too many API calls
+   */
+  splitIntoLargeChunks(html, maxTokensPerChunk) {
+    const chunks = [];
+    const approxTokens = (str) => Math.ceil(str.length / 4);
+    const maxCharsPerChunk = maxTokensPerChunk * 4; // rough conversion
+
+    let currentPos = 0;
+
+    while (currentPos < html.length) {
+      let endPos = Math.min(currentPos + maxCharsPerChunk, html.length);
+
+      // If not at the end, find a good breaking point at a tag boundary
+      if (endPos < html.length) {
+        let tagBoundary = html.indexOf('>', endPos);
+        if (tagBoundary !== -1 && tagBoundary - currentPos < maxCharsPerChunk * 1.2) {
+          endPos = tagBoundary + 1;
+        } else {
+          // Fallback: find previous tag boundary
+          tagBoundary = html.lastIndexOf('>', endPos);
+          if (tagBoundary > currentPos) {
+            endPos = tagBoundary + 1;
+          }
+        }
+      }
+
+      const chunk = html.slice(currentPos, endPos);
+      if (chunk.trim()) {
+        chunks.push(chunk);
+      }
+
+      currentPos = endPos;
+    }
+
+    return chunks;
   }
 
   /**
@@ -343,6 +469,110 @@ CRITICAL RULES:
         }
       }
     }
+  }
+
+  /**
+   * Create structured content that combines HTML with metadata for translation
+   */
+  createStructuredContent(html, title, summary, metaDescription) {
+    // Create a structured format that clearly separates different content types
+    // Use special markers that are unlikely to appear in real content
+    const markers = {
+      titleStart: '<<<TITLE_START>>>',
+      titleEnd: '<<<TITLE_END>>>',
+      summaryStart: '<<<SUMMARY_START>>>',
+      summaryEnd: '<<<SUMMARY_END>>>',
+      metaStart: '<<<META_DESC_START>>>',
+      metaEnd: '<<<META_DESC_END>>>',
+      htmlStart: '<<<HTML_START>>>',
+      htmlEnd: '<<<HTML_END>>>'
+    };
+
+    return `${markers.titleStart}${title || ''}${markers.titleEnd}
+${markers.summaryStart}${summary || ''}${markers.summaryEnd}
+${markers.metaStart}${metaDescription || ''}${markers.metaEnd}
+${markers.htmlStart}${html}${markers.htmlEnd}`;
+  }
+
+  /**
+   * Split structured content in two parts while preserving structure
+   */
+  splitStructuredContentInTwo(structuredContent) {
+    // Find the HTML section and split it there
+    const htmlStartMarker = '<<<HTML_START>>>';
+    const htmlEndMarker = '<<<HTML_END>>>';
+
+    const htmlStartIndex = structuredContent.indexOf(htmlStartMarker);
+    const htmlEndIndex = structuredContent.indexOf(htmlEndMarker);
+
+    if (htmlStartIndex === -1 || htmlEndIndex === -1) {
+      // Fallback: split at midpoint
+      const midpoint = Math.floor(structuredContent.length / 2);
+      return {
+        part1: structuredContent.slice(0, midpoint),
+        part2: structuredContent.slice(midpoint)
+      };
+    }
+
+    // Extract the HTML content
+    const beforeHtml = structuredContent.slice(0, htmlStartIndex + htmlStartMarker.length);
+    const htmlContent = structuredContent.slice(htmlStartIndex + htmlStartMarker.length, htmlEndIndex);
+    const afterHtml = structuredContent.slice(htmlEndIndex);
+
+    // Split the HTML content in half
+    const htmlMidpoint = Math.floor(htmlContent.length / 2);
+    let splitIdx = htmlContent.indexOf('>', htmlMidpoint);
+    if (splitIdx === -1) {
+      splitIdx = htmlMidpoint;
+    }
+
+    const htmlPart1 = htmlContent.slice(0, splitIdx + 1);
+    const htmlPart2 = htmlContent.slice(splitIdx + 1);
+
+    return {
+      part1: beforeHtml + htmlPart1 + htmlEndMarker,
+      part2: htmlStartMarker + htmlPart2 + afterHtml
+    };
+  }
+
+  /**
+   * Parse translated structured content back into components
+   */
+  parseTranslatedStructuredContent(translatedStructured, originalHtml, originalTitle, originalSummary, originalMetaDesc) {
+    const markers = {
+      titleStart: '<<<TITLE_START>>>',
+      titleEnd: '<<<TITLE_END>>>',
+      summaryStart: '<<<SUMMARY_START>>>',
+      summaryEnd: '<<<SUMMARY_END>>>',
+      metaStart: '<<<META_DESC_START>>>',
+      metaEnd: '<<<META_DESC_END>>>',
+      htmlStart: '<<<HTML_START>>>',
+      htmlEnd: '<<<HTML_END>>>'
+    };
+
+    // Extract each section
+    const extractSection = (content, startMarker, endMarker, fallback = '') => {
+      const startIndex = content.indexOf(startMarker);
+      const endIndex = content.indexOf(endMarker);
+
+      if (startIndex === -1 || endIndex === -1) {
+        return fallback;
+      }
+
+      return content.slice(startIndex + startMarker.length, endIndex).trim();
+    };
+
+    const translatedTitle = extractSection(translatedStructured, markers.titleStart, markers.titleEnd, originalTitle);
+    const translatedSummary = extractSection(translatedStructured, markers.summaryStart, markers.summaryEnd, originalSummary);
+    const translatedMetaDesc = extractSection(translatedStructured, markers.metaStart, markers.metaEnd, originalMetaDesc);
+    const translatedHtml = extractSection(translatedStructured, markers.htmlStart, markers.htmlEnd, originalHtml);
+
+    return {
+      html: translatedHtml,
+      title: translatedTitle,
+      summary: translatedSummary,
+      metaDescription: translatedMetaDesc
+    };
   }
 
   // Utility: escape special regex chars

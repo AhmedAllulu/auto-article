@@ -59,17 +59,37 @@ function shouldSkipDueToTiming() {
 }
 
 /**
- * Enhanced daily generation function that includes timing checks
- * but uses the same robust generation logic as manual generation
+ * Enhanced daily generation function that RESPECTS TIMING CONSTRAINTS
+ *
+ * IMPORTANT: This function ENFORCES TIME-BASED RESTRICTIONS
+ * - Used by automated cron jobs and scheduled generation
+ * - Only runs during optimal timing windows (defined by OPTIMAL_GENERATION_HOURS and OPTIMAL_DAYS)
+ * - Can be forced with FORCE_GENERATION=true environment variable
+ * - Uses the same robust generation logic as manual generation but with timing checks
  */
 export async function runDailyGeneration() {
   const startTime = Date.now();
-  
-  genLog('Daily auto-generation started');
-  
+
+  genLog('📅 Daily auto-generation started - RESPECTING TIME RESTRICTIONS', {
+    trigger: 'automated',
+    respectTiming: true,
+    currentTime: new Date().toISOString(),
+    currentHour: new Date().getHours(),
+    currentDay: new Date().getDay(),
+    optimalHours: OPTIMAL_GENERATION_HOURS,
+    optimalDays: OPTIMAL_DAYS
+  });
+
   try {
     // Check timing constraints (unless forced)
     if (shouldSkipDueToTiming()) {
+      genLog('⏰ Daily generation SKIPPED due to timing constraints', {
+        currentTime: new Date().toISOString(),
+        currentHour: new Date().getHours(),
+        currentDay: new Date().getDay(),
+        reason: 'outside_optimal_window'
+      });
+
       return {
         status: 'skipped',
         reason: 'not_optimal_time',
@@ -84,8 +104,12 @@ export async function runDailyGeneration() {
         }
       };
     }
-    
-    genLog('Daily generation proceeding - optimal time confirmed');
+
+    genLog('✅ Daily generation proceeding - optimal time confirmed', {
+      currentTime: new Date().toISOString(),
+      currentHour: new Date().getHours(),
+      currentDay: new Date().getDay()
+    });
     
     // Use the same robust manual generation logic
     const result = await runManualGeneration();
@@ -177,7 +201,7 @@ export async function runStartupGeneration() {
     
     // Add startup generation specific metadata
     result.details.generationType = 'startup';
-    result.details.totalArticlesNeeded = totalArticlesNeeded;
+    result.details.articlesNeededAtStart = totalArticlesNeeded;
     
     genLog('Startup generation completed', {
       status: result.status,

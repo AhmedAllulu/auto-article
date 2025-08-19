@@ -82,11 +82,10 @@ async function processCategory(category) {
   const translations = [];
   
   try {
-    // Generate the needed articles for this category
+    // Generate the needed articles for this category with atomic quota checking
     for (let i = 0; i < category.needed; i++) {
       logArticleProgress(category, 'master', 'starting');
-      
-      // EXACT SAME PROCESS AS MANUAL GENERATE ENDPOINT
+
       // Resolve category (exactly like manual endpoint)
       const catRes = await query('SELECT id, name, slug FROM categories WHERE slug = $1 LIMIT 1', [category.slug]);
       if (catRes.rowCount === 0) {
@@ -95,11 +94,35 @@ async function processCategory(category) {
       }
       const categoryObj = catRes.rows[0];
 
-      // Use createMasterArticle exactly like manual endpoint
-      const { masterArticle } = await createMasterArticle(categoryObj, { preferWebSearch: false });
-      
-      // Insert article & token usage exactly like manual endpoint
+      // ATOMIC QUOTA CHECK: Check quota inside transaction to prevent race conditions
+      let masterArticle = null;
+      let quotaExceeded = false;
+
       await withTransaction(async (client) => {
+        // Re-check quota inside transaction for atomic operation
+        const { rows } = await client.query(
+          `SELECT COUNT(*)::int AS count FROM articles_en
+           WHERE category_id = $1 AND published_at::date = CURRENT_DATE`,
+          [categoryObj.id]
+        );
+
+        const currentCount = rows[0]?.count || 0;
+
+        if (currentCount >= ARTICLES_PER_CATEGORY_PER_DAY) {
+          quotaExceeded = true;
+          genLog('Quota already met for category, skipping', {
+            category: categoryObj.slug,
+            currentCount,
+            quota: ARTICLES_PER_CATEGORY_PER_DAY
+          });
+          return;
+        }
+
+        // Generate article only if quota not exceeded
+        const { masterArticle: generatedArticle } = await createMasterArticle(categoryObj, { preferWebSearch: false });
+        masterArticle = generatedArticle;
+
+        // Insert article atomically with quota check
         await insertArticle(client, masterArticle);
         await updateDailyTokenUsage(client, [{
           prompt_tokens: masterArticle.ai_tokens_input,
@@ -107,7 +130,20 @@ async function processCategory(category) {
         }]);
         await incrementJobCount(client, 1);
       });
-      
+
+      if (quotaExceeded) {
+        genLog('Stopping category processing - quota exceeded', {
+          category: categoryObj.slug,
+          articlesGenerated: generatedCount
+        });
+        break; // Stop processing this category
+      }
+
+      if (!masterArticle) {
+        genError('Master article generation failed', { category: categoryObj.slug });
+        continue;
+      }
+
       generatedCount++;
       logArticleProgress(category, 'master', 'completed', {
         slug: masterArticle.slug,

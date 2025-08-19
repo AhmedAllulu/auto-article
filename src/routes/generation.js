@@ -127,15 +127,19 @@ router.get('/status', async (_req, res) => {
  * /generation/run:
  *   post:
  *     tags: [Generation]
- *     summary: Manually trigger daily generation process
+ *     summary: Manually trigger daily generation process (Manual - Bypasses Time Restrictions)
  *     description: |
  *       Manually triggers the daily generation process with the following behavior:
- *       - Bypasses all time-based restrictions and scheduling checks
+ *
+ *       **IMPORTANT**: This manual endpoint bypasses all time-based restrictions and can be used at any time.
+ *       - Bypasses all time-based restrictions and scheduling checks (unlike automated daily generation)
+ *       - Can be triggered through Swagger UI regardless of optimal timing windows
  *       - Queries database to count articles generated today for each category
- *       - For each category with fewer than 2 articles today, generates missing articles to reach exactly 2
- *       - Automatically translates each newly generated article from English to all supported languages
+ *       - For each category with fewer than 2 English articles today, generates missing articles to reach exactly 2
+ *       - Automatically translates each newly generated English article to all supported languages (de, fr, es, pt, ar, hi)
  *       - Returns detailed response showing categories processed, articles generated, and translation status
- *       - If all categories already have 2 articles for today, returns completion status
+ *       - If all categories already have 2 English articles for today, returns completion status
+ *       - Respects daily quotas while ignoring timing constraints
  *     responses:
  *       '200':
  *         description: Generation process completed successfully
@@ -152,7 +156,15 @@ router.get('/status', async (_req, res) => {
  */
 router.post('/run', async (_req, res) => {
   try {
-    genLog('Manual generation triggered via API');
+    genLog('🚀 Manual generation triggered via API - BYPASSING TIME RESTRICTIONS', {
+      endpoint: 'POST /generation/run',
+      trigger: 'manual_swagger',
+      bypassTiming: true,
+      currentTime: new Date().toISOString(),
+      currentHour: new Date().getHours(),
+      currentDay: new Date().getDay()
+    });
+
     const result = await runManualGeneration();
 
     if (result.status === 'error') {
