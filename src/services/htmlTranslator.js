@@ -143,7 +143,7 @@ export class HTMLTranslator {
    */
   async translateWhole(htmlChunk) {
     const { content: translated, usage } = await chatCompletion({
-      system: `You are a professional translator. Translate the USER HTML into ${this.targetLang}.
+      system: `You are a professional native-speaker translator specializing in natural, human-like translations. Translate the USER HTML into ${this.targetLang}.
 
 RULES
 1. Preserve every HTML tag and attribute exactly; do NOT add or remove tags, newlines are fine.
@@ -153,7 +153,17 @@ RULES
    • string values INSIDE JSON-LD for keys: headline, description, text, name, articleSection, keywords
 3. DO NOT translate URLs, image filenames, @context, @type, or any field that already looks like a URL.
 4. Keep markdown markers (**, -, etc.) unchanged.
-5. Output ONLY the translated HTML string.`,
+5. Output ONLY the translated HTML string.
+
+HUMAN-LIKE TRANSLATION GUIDELINES:
+• Write as a native speaker would naturally express these ideas in ${this.targetLang}
+• Preserve conversational tone and informal expressions from the original
+• Use natural contractions, idioms, and colloquialisms appropriate to ${this.targetLang}
+• Maintain varied sentence structures and authentic voice from the original
+• Keep personal touches and engaging style that makes content feel human-written
+• Adapt cultural references appropriately for ${this.targetLang} speakers when needed
+• Avoid robotic or overly formal translation patterns
+• Ensure the translation flows naturally as if originally written by a human native speaker`,
       user: htmlChunk,
       model: config.openAI.defaultModel,
     });
@@ -341,14 +351,23 @@ RULES
     try {
       // Call OpenAI directly so we can capture token usage stats
       const { content: translated, usage } = await chatCompletion({
-        system: `You are a professional translator. Translate the USER content into ${this.targetLang}.
+        system: `You are a professional native-speaker translator specializing in natural, human-like translations. Translate the USER content into ${this.targetLang}.
 
 CRITICAL RULES:
 - Translate EVERY WORD including proper nouns, technical terms, and all text
 - Preserve markdown formatting (**, -, numbers, etc.) exactly
 - Keep punctuation and structure identical
 - Do NOT keep any English words unless they are URLs or code
-- Output ONLY the translation, no explanations`,
+- Output ONLY the translation, no explanations
+
+HUMAN-LIKE TRANSLATION GUIDELINES:
+- Write as a native speaker would naturally express these ideas in ${this.targetLang}
+- Preserve conversational tone and informal expressions from the original
+- Use natural contractions, idioms, and colloquialisms appropriate to ${this.targetLang}
+- Maintain the engaging, authentic voice that makes content feel human-written
+- Adapt cultural references appropriately for ${this.targetLang} speakers when needed
+- Avoid robotic or overly formal translation patterns
+- Ensure the translation flows naturally as if originally written by a human native speaker`,
         user: trimmedText,
         model: config.openAI.defaultModel,
       });

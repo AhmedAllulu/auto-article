@@ -54,7 +54,7 @@ function combinePrompts(system, user, enableWebSearch = false) {
   // Add web search instructions when enabled
   if (enableWebSearch) {
     parts.push(`CRITICAL WEB SEARCH INSTRUCTIONS: When using web search, ONLY focus on:
-- Content published in the last 30 days (2024)
+- Content published in the last day 
 - Current trending topics and breaking news
 - Latest updates, announcements, and developments
 - Recent statistics, data, and research findings
