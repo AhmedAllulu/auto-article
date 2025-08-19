@@ -66,9 +66,9 @@ export const config = {
       return this.apiKeys[0] || '';
     },
     baseUrl: process.env.ONE_MIN_AI_BASE_URL || 'https://api.1min.ai',  // Updated base URL
-    defaultModel: process.env.AI_DEFAULT_TEXT_MODEL || 'gpt-4o-mini',
+    defaultModel: process.env.AI_DEFAULT_TEXT_MODEL || 'gpt-5-nano',
     fallbackModel: process.env.AI_FALLBACK_MODEL || 'mistral-nemo',
-    premiumModel: process.env.AI_PREMIUM_MODEL || 'gpt-4o',
+    premiumModel: process.env.AI_PREMIUM_MODEL || 'gpt-5-nano',
     enableWebSearch: String(process.env.ENABLE_WEB_SEARCH || 'true') === 'true',
     // Controls length and breadth when web search is enabled
     webSearchMaxWords: Number(process.env.AI_WEBSEARCH_MAX_WORDS || 1200),
@@ -98,22 +98,10 @@ export const config = {
   },
   generation: {
     enabled: String(process.env.ENABLE_GENERATION) === 'true',
-    dailyTarget: Number(process.env.DAILY_ARTICLE_TARGET || 100),
-    maxBatchPerRun: Number(process.env.MAX_BATCH_PER_RUN || 6),
-    cronSchedule: process.env.CRON_SCHEDULE || '*/30 6-11 * * 2-4', // Every 30 min, 6-11 AM, Tue-Thu
-    maxTranslationsPerMaster: Number(process.env.MAX_TRANSLATIONS_PER_MASTER || 6),
-    maxMastersPerRun: Number(process.env.MAX_MASTERS_PER_RUN || 8),
-    maxMastersPerDay: Number(process.env.MAX_MASTER_DAILY || 10),
-    maxCategoriesPerRun: Number(process.env.MAX_CATEGORIES_PER_RUN || 3), // New: limit categories per run
-    articlesPerCategoryPerDay: Number(process.env.ARTICLES_PER_CATEGORY_PER_DAY || 2), // New: 2 articles per category
-    // ------------ How-To generation controls ------------
-    enableHowTo: String(process.env.ENABLE_HOWTO_GENERATION || 'false') === 'true',
-    howToDailyTarget: Number(process.env.HOWTO_DAILY_TARGET || 50),
-    maxHowTosPerRun: Number(process.env.MAX_HOWTOS_PER_RUN || 10),
-    maxHowTosPerDay: Number(process.env.MAX_HOWTOS_PER_DAY || 50),
-    // ------------ Error handling controls ------------
-    stopOnError: String(process.env.STOP_ON_ERROR || 'true') === 'true', // New: stop process on errors
-    logRetentionDays: Number(process.env.LOG_RETENTION_DAYS || 10), // New: log cleanup period
+    maxCategoriesPerRun: Number(process.env.MAX_CATEGORIES_PER_RUN || 3), // limit categories per run
+    articlesPerCategoryPerDay: Number(process.env.ARTICLES_PER_CATEGORY_PER_DAY || 2), // 2 articles per category daily
+    stopOnError: String(process.env.STOP_ON_ERROR || 'true') === 'true', // stop process on errors
+    logRetentionDays: Number(process.env.LOG_RETENTION_DAYS || 10), // log cleanup period
   },
   seo: {
     canonicalBaseUrl: process.env.CANONICAL_BASE_URL || '',

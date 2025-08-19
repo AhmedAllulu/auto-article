@@ -114,64 +114,87 @@ async function processCategory(category) {
         wordCount: masterArticle.word_count
       });
       
-      // Prepare translations for this article
-      const targetLanguages = (config.languages || [])
-        .filter(lang => lang !== 'en')
-        .map(languageCode => ({
-          languageCode,
-          score: computePriorityScore({
-            categorySlug: category.slug,
-            languageCode,
-            countryCode: bestMarketForLanguage(languageCode),
-          }),
-        }))
-        .sort((a, b) => b.score - a.score)
-        .slice(0, config.generation.maxTranslationsPerMaster || 6)
-        .map(x => x.languageCode);
-      
-      // Generate translations sequentially using the same method as manual endpoint
-      for (const lang of targetLanguages) {
-        try {
-          logTranslationProgress(category, lang, 'starting');
-          
-          // EXACT SAME TRANSLATION PROCESS AS MANUAL GENERATE ENDPOINT
-          const translatedArticle = await generateTranslationArticle({
-            lang,
-            category: {
-              id: categoryObj.id,
-              name: categoryObj.name,
-              slug: categoryObj.slug,
-            },
-            masterSlug: masterArticle.slug,
-            masterTitle: masterArticle.title,
-            masterSummary: masterArticle.summary,
-            imageUrl: masterArticle.image_url,
-          });
-          
-          if (translatedArticle) {
-            // Insert translation exactly like manual endpoint
-            await withTransaction(async (client) => {
-              await insertArticle(client, translatedArticle);
-              await updateDailyTokenUsage(client, [{
-                prompt_tokens: translatedArticle.ai_tokens_input,
-                completion_tokens: translatedArticle.ai_tokens_output,
-              }]);
-              await incrementJobCount(client, 1);
+      // Prepare translations for this article – but respect overall category cap (masters + translations)
+      const remainingSlots = Math.max(0, ARTICLES_PER_CATEGORY_PER_DAY - generatedCount);
+      const maxTranslationsThisMaster = Math.min(
+        remainingSlots, // ensure we don't exceed category cap
+        config.generation.maxTranslationsPerMaster || 0
+      );
+
+      const targetLanguages = (maxTranslationsThisMaster > 0)
+        ? (config.languages || [])
+            .filter(lang => lang !== 'en')
+            .map(languageCode => ({
+              languageCode,
+              score: computePriorityScore({
+                categorySlug: category.slug,
+                languageCode,
+                countryCode: bestMarketForLanguage(languageCode),
+              }),
+            }))
+            .sort((a, b) => b.score - a.score)
+            .slice(0, maxTranslationsThisMaster)
+            .map(x => x.languageCode)
+        : [];
+ 
+      // Generate translations concurrently to reduce total processing time
+      const translationResults = await Promise.allSettled(
+        targetLanguages.map(async (lang) => {
+          try {
+            logTranslationProgress(category, lang, 'starting');
+
+            // EXACT SAME TRANSLATION PROCESS AS MANUAL GENERATE ENDPOINT
+            const { translationArticle } = await generateTranslationArticle({
+              lang,
+              category: {
+                id: categoryObj.id,
+                name: categoryObj.name,
+                slug: categoryObj.slug,
+              },
+              masterSlug: masterArticle.slug,
+              masterTitle: masterArticle.title,
+              masterSummary: masterArticle.summary,
+              imageUrl: masterArticle.image_url,
             });
-            
-            generatedCount++;
-            translations.push({ lang, slug: translatedArticle.slug });
-            logTranslationProgress(category, lang, 'completed', {
-              slug: translatedArticle.slug
-            });
+
+            if (translationArticle) {
+              // Insert translation exactly like manual endpoint
+              await withTransaction(async (client) => {
+                await insertArticle(client, translationArticle);
+                await updateDailyTokenUsage(client, [{
+                  prompt_tokens: translationArticle.ai_tokens_input,
+                  completion_tokens: translationArticle.ai_tokens_output,
+                }]);
+                await incrementJobCount(client, 1);
+              });
+
+              return { lang, slug: translationArticle.slug };
+            }
+
+            throw new Error('empty_translation');
+          } catch (error) {
+            // Allow promise to reject, capturing language information for logging
+            throw { lang, message: error.message };
           }
-          
-        } catch (error) {
-          genError(`Translation failed for ${lang}`, {
+        })
+      );
+
+      // Handle results
+      for (const res of translationResults) {
+        if (res.status === 'fulfilled') {
+          const { lang, slug } = res.value;
+          generatedCount++;
+          translations.push({ lang, slug });
+          logTranslationProgress(category, lang, 'completed', { slug });
+        } else {
+          // res.status === 'rejected'
+          const failedLang = res.reason?.lang || 'unknown';
+          const message = res.reason?.message || res.reason;
+          genError(`Translation failed for ${failedLang}`, {
             category: category.slug,
-            language: lang,
-            error: error.message
-          }, false); // Don't stop process for single translation failures
+            language: failedLang,
+            error: message,
+          }, false);
         }
       }
       

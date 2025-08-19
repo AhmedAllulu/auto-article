@@ -1,12 +1,12 @@
 import express from 'express';
 import { query } from '../db.js';
-import { 
-  runOptimizedGeneration, 
-  checkGenerationHealth, 
+import {
+  checkGenerationHealth,
   isOptimalTime,
   getCategoriesNeedingArticles,
-  ARTICLES_PER_CATEGORY_PER_DAY 
+  ARTICLES_PER_CATEGORY_PER_DAY
 } from '../services/optimizedGeneration.js';
+import { runManualGeneration } from '../services/manualGenerationService.js';
 import { genLog } from '../services/logger.js';
 
 const router = express.Router();
@@ -127,47 +127,57 @@ router.get('/status', async (_req, res) => {
  * /generation/run:
  *   post:
  *     tags: [Generation]
- *     summary: Manually trigger optimized generation
- *     description: Triggers the optimized generation process that generates 2 articles per category and waits for translations
+ *     summary: Manually trigger daily generation process
+ *     description: |
+ *       Manually triggers the daily generation process with the following behavior:
+ *       - Bypasses all time-based restrictions and scheduling checks
+ *       - Queries database to count articles generated today for each category
+ *       - For each category with fewer than 2 articles today, generates missing articles to reach exactly 2
+ *       - Automatically translates each newly generated article from English to all supported languages
+ *       - Returns detailed response showing categories processed, articles generated, and translation status
+ *       - If all categories already have 2 articles for today, returns completion status
  *     responses:
  *       '200':
- *         description: Generation completed successfully
+ *         description: Generation process completed successfully
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 data:
- *                   type: object
- *                   properties:
- *                     generated:
- *                       type: integer
- *                     processedCategories:
- *                       type: integer
- *                     categoriesRemaining:
- *                       type: integer
- *                     status:
- *                       type: string
+ *               $ref: '#/components/schemas/ApiResponseGenerationRun'
  *       '500':
- *         description: Generation failed
+ *         description: Generation process failed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post('/run', async (_req, res) => {
   try {
-    genLog('Manual generation triggered');
-    const result = await runOptimizedGeneration();
-    
-    if (result.error) {
-      return res.status(500).json({ 
-        error: 'Generation failed', 
-        message: result.error,
-        generated: result.generated || 0
+    genLog('Manual generation triggered via API');
+    const result = await runManualGeneration();
+
+    if (result.status === 'error') {
+      return res.status(500).json({
+        error: 'Generation failed',
+        message: result.message,
+        details: result.details
       });
     }
 
     res.json({ data: result });
   } catch (err) {
     genLog('Manual generation failed', { error: err.message }, 'error');
-    res.status(500).json({ error: 'Generation failed', message: err.message });
+    res.status(500).json({
+      error: 'Generation failed',
+      message: err.message,
+      details: {
+        categoriesProcessed: [],
+        totalArticlesGenerated: 0,
+        totalTranslationsCompleted: 0,
+        executionTimeMs: 0,
+        timestamp: new Date().toISOString(),
+        error: err.message
+      }
+    });
   }
 });
 

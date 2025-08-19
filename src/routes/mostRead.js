@@ -114,7 +114,9 @@ router.get('/', async (req, res) => {
     let articles = result.rows;
     
     if (articles.length < limit) {
-      const additionalResult = await query(`
+      // Build parameterized query for excluded IDs
+      const excludedIds = articles.map(a => a.id);
+      let additionalQuery = `
         SELECT 
           a.id,
           a.title,
@@ -132,12 +134,19 @@ router.get('/', async (req, res) => {
           c.slug AS category_slug
         FROM ${tableName} a
         LEFT JOIN categories c ON c.id = a.category_id
-        WHERE a.published_at IS NOT NULL
-          AND a.id NOT IN (${articles.map(a => a.id).join(',') || '0'})
-        ORDER BY a.published_at DESC
-        LIMIT $1
-      `, [limit - articles.length]);
+        WHERE a.published_at IS NOT NULL`;
       
+      const queryParams = [limit - articles.length];
+      
+      if (excludedIds.length > 0) {
+        const placeholders = excludedIds.map((_, index) => `$${index + 2}`).join(',');
+        additionalQuery += ` AND a.id NOT IN (${placeholders})`;
+        queryParams.push(...excludedIds);
+      }
+      
+      additionalQuery += ` ORDER BY a.published_at DESC LIMIT $1`;
+      
+      const additionalResult = await query(additionalQuery, queryParams);
       articles = [...articles, ...additionalResult.rows];
     }
     

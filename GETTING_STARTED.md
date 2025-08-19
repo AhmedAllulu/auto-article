@@ -105,7 +105,7 @@ Update `src/config/config.js` for API settings:
 export default {
   oneMinAI: {
     apiKey: process.env.ONEMIN_AI_API_KEY,
-    defaultModel: 'gpt-4o-mini',
+    defaultModel: 'gpt-5-nano',
     enableWebSearch: true
   },
   // ... other settings

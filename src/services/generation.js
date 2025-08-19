@@ -65,9 +65,9 @@ function estimateReadingTimeMinutes(htmlContent) {
   return minutes;
 }
 
-function canonicalForSlug(slug) {
+function canonicalForSlug(slug, languageCode = 'en') {
   const baseUrl = config.seo?.canonicalBaseUrl || 'https://vivaverse.top';
-  return `${baseUrl}/${slug}`;
+  return `${baseUrl}/${languageCode}/${slug}`;
 }
 
 function sanitizeHtmlContent(html) {
@@ -854,7 +854,7 @@ async function createMasterArticle(category, { preferWebSearch = false } = {}) {
   const summary = masterJson.summary;
   const metaTitle = masterJson.metaTitle;
   const metaDescription = masterJson.metaDescription;
-  const canonicalUrl = canonicalForSlug(slugBase);
+  const canonicalUrl = canonicalForSlug(slugBase, 'en');
   
   const tImgStart = Date.now();
   const imageUrl = await fetchUnsplashImageUrl(title);
@@ -908,110 +908,97 @@ async function createMasterArticle(category, { preferWebSearch = false } = {}) {
   return { masterArticle, masterJson };
 }
 
-async function createHowToArticle(category, { preferWebSearch = false } = {}) {
-  const { system, user } = getPrompt('how_to', category.name);
-  genLog('AI how-to start (natural text)', { category: category.slug });
-  const tHowToStart = Date.now();
-  
-  // SINGLE AI CALL - asking for natural text (no web search by default for how-to articles)
-  const ai = await generateRobustArticle({ 
-    system, 
-    user, 
-    preferWebSearch 
-  });
-  
-  genLog('AI how-to done', { category: category.slug, ms: Date.now() - tHowToStart });
-  
-  // ALWAYS extract - no JSON parsing needed
-  const extracted = extractFromNaturalText(ai.content, category.name);
-  
-  // Convert to expected JSON structure
-  const howToJson = {
-    title: extracted.title,
-    metaTitle: extracted.title.length <= 60 ? extracted.title : extracted.title.slice(0, 57) + '...',
-    metaDescription: extracted.metaDescription,
-    intro: extracted.intro,
-    sections: extracted.sections,
-    faq: extracted.faq,
-    keywords: extracted.keywords,
-    externalLinks: extracted.externalLinks,
-    summary: extracted.summary,
-    sourceUrls: [],
-    category: category.name
-  };
+// ========== TRANSLATION FUNCTIONS ==========
 
-  const totalWords = (extracted.intro + extracted.sections.map(s => s.body).join(' ') + 
-                     extracted.faq.map(f => f.a).join(' ')).split(' ').length;
-  
-  genLog('How-to natural text extraction completed', { 
-    category: category.slug, 
-    sections: extracted.sections.length,
-    faq: extracted.faq.length,
-    words: totalWords,
-    successRate: '100%'
-  });
+async function generateTranslationArticle({ lang, category, masterSlug, masterTitle, masterSummary, imageUrl }) {
+  genLog('AI translation start', { category: category.slug, lang, masterSlug });
+  const tTransStart = Date.now();
 
-  // Build final article
-  const title = howToJson.title;
-  const slugBase = await generateUniqueSlug(toSlug(title));
-  let contentHtml = sanitizeHtmlContent(assembleHtml(howToJson));
-  const summary = howToJson.summary;
-  const metaTitle = howToJson.metaTitle;
-  const metaDescription = howToJson.metaDescription;
-  const canonicalUrl = canonicalForSlug(slugBase);
+  // Get the master article's HTML content directly from database
+  const masterRes = await query(
+    `SELECT title, content, summary, meta_description FROM articles_en WHERE slug = $1`,
+    [masterSlug]
+  );
   
-  const tImgStart = Date.now();
-  const imageUrl = await fetchUnsplashImageUrl(title);
-  genLog('Unsplash fetched for how-to', { 
-    category: category.slug, 
-    ms: Date.now() - tImgStart, 
-    hasImage: Boolean(imageUrl) 
-  });
-  
-  const readingTime = estimateReadingTimeMinutes(contentHtml);
+  if (!masterRes.rows.length) {
+    throw new Error(`Master article not found: ${masterSlug}`);
+  }
 
-  let howToArticle = {
-    title,
-    slug: slugBase,
-    content: contentHtml,
-    summary,
-    language_code: 'en',
-    category_id: category.id,
+  const masterArticle = masterRes.rows[0];
+  const originalContent = masterArticle.content;
+  const originalTitle = masterArticle.title;
+  const originalSummary = masterArticle.summary;
+  const originalMetaDesc = masterArticle.meta_description;
+
+  // Use HTML-aware translator to preserve exact structure
+  const translator = new HTMLTranslator(lang);
+  
+  // Translate the HTML content while preserving structure
+  let translatedContent = await translator.translateHTML(originalContent);
+  
+  // Translate metadata fields
+  const translatedTitle = await translateChunk(lang, originalTitle);
+  const translatedSummary = await translateChunk(lang, originalSummary || masterSummary || '');
+  const translatedMetaDesc = await translateChunk(lang, originalMetaDesc || originalSummary || '');
+
+  // Update title in HTML content
+  translatedContent = translatedContent.replace(
+    new RegExp(`<h1[^>]*>${escapeRegex(originalTitle)}</h1>`, 'gi'),
+    `<h1>${translatedTitle}</h1>`
+  );
+
+  // Generate unique slug and canonical URL for target language
+  const tSlug = await generateUniqueSlug(`${masterSlug}-${lang}`);
+  const tCanonical = canonicalForSlug(tSlug, lang);
+
+  // Update language and canonical URL in JSON-LD (HTMLTranslator handles most of it)
+  translatedContent = translatedContent.replace(
+    /"inLanguage":"en"/g,
+    `"inLanguage":"${lang}"`
+  );
+
+  const readingTime = estimateReadingTimeMinutes(translatedContent);
+
+  let translationArticle = {
+    title: translatedTitle,
+    slug: tSlug,
+    content: translatedContent,
+    summary: translatedSummary,
+    meta_title: translatedTitle,
+    meta_description: translatedMetaDesc,
+    canonical_url: tCanonical,
     image_url: imageUrl,
-    meta_title: metaTitle,
-    meta_description: metaDescription,
-    canonical_url: canonicalUrl,
     reading_time_minutes: readingTime,
-    ai_model: ai.model,
-    ai_prompt: user,
-    ai_tokens_input: ai.usage?.prompt_tokens || 0,
-    ai_tokens_output: ai.usage?.completion_tokens || 0,
-    total_tokens: ai.usage?.total_tokens || 0,
-    source_url: null,
-    // content_hash will be added after final content is assembled
+    language_code: lang,
+    category_id: category.id,
+    published_at: new Date().toISOString(),
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    content_hash: computeHash(translatedContent + translatedTitle),
+    ai_tokens_input: translator.getTokenStats().input || 0,
+    ai_tokens_output: translator.getTokenStats().output || 0
   };
 
-  // Add word count validation to article structure
-  howToArticle = addWordCountToArticle(howToArticle, contentHtml, category.slug);
-
-  // Append JSON-LD schema
-  const howToLd = buildArticleJsonLd({
-    masterJson: howToJson,
-    title,
-    description: metaDescription,
-    canonicalUrl,
-    imageUrl,
-    languageCode: 'en',
+  genLog('AI translation done', { 
+    category: category.slug, 
+    lang, 
+    ms: Date.now() - tTransStart 
   });
-  howToArticle.content = appendJsonLd(howToArticle.content, howToLd);
-  // Final content hash after sanitization and JSON-LD inclusion
-  howToArticle.content_hash = computeHash(howToArticle.content + title);
 
   trackSuccess();
 
-  return { howToArticle, howToJson };
+  return { 
+    translationArticle, 
+    translatedTitle, 
+    translatedSummary, 
+    translatedContent 
+  };
 }
 
+// ========== UTILITY FUNCTIONS ==========
+
+// Legacy functions (disabled)
+/*
 async function createBestOfArticle(category, { preferWebSearch = false } = {}) {
   const { system, user } = getPrompt('best_of', category.name);
   genLog('AI best-of start', { category: category.slug });
@@ -1043,7 +1030,7 @@ async function createBestOfArticle(category, { preferWebSearch = false } = {}) {
   const summary = bestOfJson.summary;
   const metaTitle = bestOfJson.metaTitle;
   const metaDescription = bestOfJson.metaDescription;
-  const canonicalUrl = canonicalForSlug(slugBase);
+  const canonicalUrl = canonicalForSlug(slugBase, 'en');
 
   const imageUrl = await fetchUnsplashImageUrl(title);
   const readingTime = estimateReadingTimeMinutes(contentHtml);
@@ -1118,7 +1105,7 @@ async function createCompareArticle(category, { preferWebSearch = false } = {}) 
   const summary = compareJson.summary;
   const metaTitle = compareJson.metaTitle;
   const metaDescription = compareJson.metaDescription;
-  const canonicalUrl = canonicalForSlug(slugBase);
+  const canonicalUrl = canonicalForSlug(slugBase, 'en');
 
   const imageUrl = await fetchUnsplashImageUrl(title);
   const readingTime = estimateReadingTimeMinutes(contentHtml);
@@ -1192,7 +1179,7 @@ async function createTrendsArticle(category, { preferWebSearch = false } = {}) {
   const summary = trendsJson.summary;
   const metaTitle = trendsJson.metaTitle;
   const metaDescription = trendsJson.metaDescription;
-  const canonicalUrl = canonicalForSlug(slugBase);
+  const canonicalUrl = canonicalForSlug(slugBase, 'en');
 
   const imageUrl = await fetchUnsplashImageUrl(title);
   const readingTime = estimateReadingTimeMinutes(contentHtml);
@@ -1235,88 +1222,7 @@ async function createTrendsArticle(category, { preferWebSearch = false } = {}) {
 
   return { trendsArticle, trendsJson };
 }
-
-async function generateTranslationArticle({ lang, category, masterSlug, masterTitle, masterSummary, imageUrl }) {
-  genLog('AI translation start', { category: category.slug, lang, masterSlug });
-  const tTransStart = Date.now();
-
-  // Get the master article's HTML content directly from database
-  const masterRes = await query(
-    `SELECT title, content, summary, meta_description FROM articles_en WHERE slug = $1`,
-    [masterSlug]
-  );
-  
-  if (!masterRes.rows.length) {
-    throw new Error(`Master article not found: ${masterSlug}`);
-  }
-
-  const masterArticle = masterRes.rows[0];
-  const originalContent = masterArticle.content;
-  const originalTitle = masterArticle.title;
-  const originalSummary = masterArticle.summary;
-  const originalMetaDesc = masterArticle.meta_description;
-
-  // Use HTML-aware translator to preserve exact structure
-  const translator = new HTMLTranslator(lang);
-  
-  // Translate the HTML content while preserving structure
-  let translatedContent = await translator.translateHTML(originalContent);
-  
-  // Translate metadata fields
-  const translatedTitle = await translateChunk(lang, originalTitle);
-  const translatedSummary = await translateChunk(lang, originalSummary || masterSummary || '');
-  const translatedMetaDesc = await translateChunk(lang, originalMetaDesc || originalSummary || '');
-
-  // Update title in HTML content
-  translatedContent = translatedContent.replace(
-    new RegExp(`<h1[^>]*>${escapeRegex(originalTitle)}</h1>`, 'gi'),
-    `<h1>${translatedTitle}</h1>`
-  );
-
-  // Generate unique slug and canonical URL for target language
-  const tSlug = await generateUniqueSlug(`${masterSlug}-${lang}`);
-  const tCanonical = canonicalForSlug(tSlug);
-
-  // Update language and canonical URL in JSON-LD (HTMLTranslator handles most of it)
-  translatedContent = translatedContent.replace(
-    /"inLanguage":"en"/g,
-    `"inLanguage":"${lang}"`
-  );
-  
-  translatedContent = translatedContent.replace(
-    /"mainEntityOfPage":"[^"]+"/g,
-    `"mainEntityOfPage":"${tCanonical}"`
-  );
-
-  const tReadingTime = estimateReadingTimeMinutes(translatedContent);
-
-  genLog('AI translation done', { category: category.slug, lang, ms: Date.now() - tTransStart });
-
-  const tArticle = {
-    title: translatedTitle,
-    slug: tSlug,
-    content: translatedContent,
-    summary: translatedSummary,
-    language_code: lang,
-    category_id: category.id,
-    image_url: imageUrl,
-    meta_title: translatedTitle,
-    meta_description: translatedMetaDesc,
-    canonical_url: tCanonical,
-    reading_time_minutes: tReadingTime,
-    ai_model: config.openAI.defaultModel,
-    ai_prompt: `HTML translation to ${lang}`,
-    ai_tokens_input: 0, // Will be updated if needed
-    ai_tokens_output: 0, // Will be updated if needed  
-    total_tokens: 0, // Will be updated if needed
-    source_url: null,
-    content_hash: computeHash(translatedContent + translatedTitle + lang),
-  };
-
-  trackSuccess();
-
-  return tArticle;
-}
+*/
 
 export async function runGenerationBatch() {
   genLog('Batch start');

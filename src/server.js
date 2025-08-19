@@ -16,10 +16,11 @@ import generationRoute from './routes/generation.js';
 import analyticsRoute from './routes/analytics.js';
 import mostReadRoute from './routes/mostRead.js';
 
-import { runGenerationBatch } from './services/generation.js';
-import { runOptimizedGeneration } from './services/optimizedGeneration.js';
+import { runDailyGeneration, runStartupGeneration } from './services/dailyGenerationService.js';
 import { genLog, genError, cleanupOldLogs } from './services/logger.js';
 import { updateTrendingScores } from './services/viewTracker.js';
+import { validateConfigurationOnStartup } from './services/configValidator.js';
+import { expressErrorHandler } from './services/errorHandler.js';
 import seoRoute from './routes/seo.js';
 import { query } from './db.js';
 import { openapiSpecification } from './docs/swagger.js';
@@ -80,61 +81,63 @@ app.get('/openapi.json', (_req, res) => {
 });
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(openapiSpecification));
 
-// Enhanced scheduler with optimized generation and error handling
+// Enhanced error handling middleware
+app.use(expressErrorHandler);
+
+// Enhanced daily generation with comprehensive error handling and logging
 async function ensureDailyQuota() {
   try {
-    genLog('Starting daily quota check');
-    
-    // Check current progress
-    const { rows } = await query(
-      `SELECT num_articles_generated, num_articles_target FROM generation_jobs WHERE job_date = CURRENT_DATE`
-    );
-    const generated = rows[0]?.num_articles_generated || 0;
-    const target = rows[0]?.num_articles_target || config.generation.dailyTarget;
-    
-    genLog('Daily quota status', { generated, target, remaining: target - generated });
-    
-    if (generated >= target) {
-      genLog('Daily quota already met');
-      return { status: 'quota_met', generated, target };
-    }
-    
-    // Use optimized generation system
-    const result = await runOptimizedGeneration();
-    
-    if (result.error) {
-      genError('Generation batch failed with error', { 
-        error: result.error,
-        generated: result.generated || 0
+    genLog('Starting enhanced daily generation process');
+
+    // Use the new daily generation service
+    const result = await runDailyGeneration();
+
+    if (result.status === 'error') {
+      genError('Daily generation failed with error', {
+        error: result.message,
+        details: result.details
       });
-      // Don't continue processing to avoid wasting tokens
-      return { status: 'error', error: result.error, generated: result.generated || 0 };
+      return {
+        status: 'error',
+        error: result.message,
+        generated: result.details.totalArticlesGenerated || 0,
+        translations: result.details.totalTranslationsCompleted || 0
+      };
     }
-    
-    if (result.skipped) {
-      genLog('Generation batch skipped', { reason: result.reason });
-      return { status: 'skipped', reason: result.reason };
+
+    if (result.status === 'skipped') {
+      genLog('Daily generation skipped', {
+        reason: result.reason,
+        message: result.message
+      });
+      return {
+        status: 'skipped',
+        reason: result.reason,
+        message: result.message
+      };
     }
-    
-    genLog('Generation batch completed successfully', {
-      generated: result.generated,
-      processedCategories: result.processedCategories,
-      categoriesRemaining: result.categoriesRemaining
+
+    genLog('Daily generation completed successfully', {
+      status: result.status,
+      articlesGenerated: result.details.totalArticlesGenerated,
+      translationsCompleted: result.details.totalTranslationsCompleted,
+      categoriesProcessed: result.details.categoriesProcessed.length,
+      executionTimeMs: result.details.executionTimeMs
     });
-    
-    return { 
-      status: 'success', 
-      generated: result.generated,
-      processedCategories: result.processedCategories,
-      categoriesRemaining: result.categoriesRemaining
+
+    return {
+      status: 'success',
+      generated: result.details.totalArticlesGenerated,
+      translations: result.details.totalTranslationsCompleted,
+      processedCategories: result.details.categoriesProcessed.length,
+      executionTimeMs: result.details.executionTimeMs
     };
-    
+
   } catch (error) {
-    genError('Daily quota check failed', {
+    genError('Daily generation process failed', {
       error: error.message,
       stack: error.stack
     });
-    // Return error status to prevent continued processing
     return { status: 'critical_error', error: error.message };
   }
 }
@@ -151,17 +154,21 @@ async function dailyLogCleanup() {
 }
 
 if (config.generation.enabled) {
-  // Main generation scheduler - runs every 30 minutes during optimal hours
-  cron.schedule(config.generation.cronSchedule || '*/30 6-11 * * 2-4', async () => {
+  // Daily article generation - runs at 10 AM EVERY DAY
+  cron.schedule('0 10 * * *', async () => {
     try {
+      genLog('🚀 Starting daily article generation at 10 AM');
       const result = await ensureDailyQuota();
-      if (result.status === 'error' || result.status === 'critical_error') {
-        genError('Generation scheduler stopped due to error', result);
-        // Don't schedule next run if there's an error
-        return;
+      
+      if (result.status === 'success') {
+        genLog(`✅ Daily generation completed successfully: ${result.generated} articles, ${result.translations} translations`);
+      } else if (result.status === 'skipped') {
+        genLog(`📊 Daily generation skipped: ${result.message || result.reason}`);
+      } else if (result.status === 'error' || result.status === 'critical_error') {
+        genError('❌ Daily generation stopped due to error', result);
       }
     } catch (error) {
-      genError('Generation scheduler error', { error: error.message });
+      genError('❌ Daily generation scheduler error', { error: error.message });
     }
   });
   
@@ -171,36 +178,77 @@ if (config.generation.enabled) {
   // Trending scores update scheduler - runs every 30 minutes
   cron.schedule('*/30 * * * *', async () => {
     try {
-      genLog('Updating trending scores...');
       await updateTrendingScores();
-      genLog('Trending scores updated successfully');
     } catch (error) {
       genError('Trending scores update failed', { error: error.message }, false);
     }
   });
   
-  genLog('Schedulers initialized', {
-    generationSchedule: config.generation.cronSchedule || '*/30 6-11 * * 2-4',
-    logCleanupSchedule: '0 2 * * *',
-    trendingScoresSchedule: '*/30 * * * *'
+  genLog('📅 Auto-generation schedulers initialized', {
+    dailyGeneration: '0 10 * * * (10 AM daily)',
+    logCleanup: '0 2 * * * (2 AM daily)',
+    trendingUpdates: '*/30 * * * * (every 30 min)',
+    articlesPerCategory: config.generation.articlesPerCategoryPerDay
   });
 }
 
-// Kick off on server start
+// Enhanced startup generation on server start
 if (config.generation.enabled) {
-  ensureDailyQuota().catch(() => {});
+  // Immediate startup check (conservative)
+  runStartupGeneration().then(result => {
+    if (result.status === 'success') {
+      genLog(`🚀 Startup generation completed: ${result.details.totalArticlesGenerated} articles, ${result.details.totalTranslationsCompleted} translations`);
+    } else if (result.status === 'skipped') {
+      genLog(`📊 Startup generation skipped: ${result.message}`);
+    } else if (result.status === 'error') {
+      genError('❌ Startup generation failed', result.details);
+    }
+  }).catch(error => {
+    genError('Startup generation error', { error: error.message }, false);
+  });
+
+  // Also schedule a delayed startup check (after 2 minutes) for additional safety
+  setTimeout(async () => {
+    try {
+      genLog('Running delayed startup generation check');
+      const result = await runStartupGeneration();
+      if (result.status === 'success' && result.details.totalArticlesGenerated > 0) {
+        genLog(`Delayed startup generation completed: ${result.details.totalArticlesGenerated} articles, ${result.details.totalTranslationsCompleted} translations`);
+      }
+    } catch (error) {
+      genError('Delayed startup generation failed', { error: error.message }, false);
+    }
+  }, 2 * 60 * 1000); // 2 minutes delay
+} else {
+  genLog('⚠️  Auto-generation is DISABLED. Set ENABLE_GENERATION=true to enable automatic article generation.');
 }
 
 function startServer() {
+  // Validate configuration before starting server
+  if (!validateConfigurationOnStartup()) {
+    console.error('❌ Server startup aborted due to configuration errors');
+    process.exit(1);
+  }
+
   if (isProduction && config.https.certPath && config.https.keyPath) {
     const cert = fs.readFileSync(config.https.certPath);
     const key = fs.readFileSync(config.https.keyPath);
     https.createServer({ key, cert }, app).listen(config.port, () => {
-      logger.info(`HTTPS server listening on ${config.port}`);
+      logger.info(`✅ HTTPS server listening on ${config.port}`);
+      genLog('Server started successfully', {
+        port: config.port,
+        protocol: 'HTTPS',
+        generationEnabled: config.generation.enabled
+      });
     });
   } else {
     app.listen(config.port, () => {
-      logger.info(`HTTP server listening on ${config.port}`);
+      logger.info(`✅ HTTP server listening on ${config.port}`);
+      genLog('Server started successfully', {
+        port: config.port,
+        protocol: 'HTTP',
+        generationEnabled: config.generation.enabled
+      });
     });
   }
 }

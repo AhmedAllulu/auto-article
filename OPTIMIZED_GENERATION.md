@@ -4,7 +4,7 @@
 
 The system has been completely redesigned to address your requirements:
 
-- ✅ **Optimal Timing**: Generates articles during peak engagement hours (6 AM - 12 PM, Tuesday-Thursday)
+- ✅ **Optimal Timing**: Generates articles at 10 AM sharp (Tuesday-Thursday) for maximum SEO impact
 - ✅ **2 Articles per Category per Day**: Ensures balanced content across all categories
 - ✅ **Sequential Translation**: Waits for all translations to complete before moving to next category
 - ✅ **Error Handling**: Stops process on errors to prevent token waste
@@ -13,10 +13,10 @@ The system has been completely redesigned to address your requirements:
 ## Key Improvements
 
 ### 🕐 Optimal Scheduling
-- **Best Days**: Tuesday, Wednesday, Thursday (research-backed optimal publishing days)
-- **Best Hours**: 6 AM - 12 PM (peak engagement window)
-- **Frequency**: Every 30 minutes during optimal hours
-- **Schedule**: `*/30 6-11 * * 2-4` (every 30 min, 6-11 AM, Tue-Thu)
+- **Frequency**: Once daily at the perfect time
+- **Best Time**: 10 AM sharp (optimal SEO and engagement hour)
+- **Schedule**: `0 10 * * *` (10 AM every single day)
+- **Clean System**: Removed all unused scheduling complexity
 
 ### 📊 Category-Based Generation
 - **Target**: 2 articles per category per day
@@ -48,19 +48,14 @@ The system has been completely redesigned to address your requirements:
 ### Environment Variables
 
 ```bash
-# Scheduling
-CRON_SCHEDULE="*/30 6-11 * * 2-4"  # Every 30 min, 6-11 AM, Tue-Thu
-
-# Generation Limits
+# Essential Generation Settings (cleaned up!)
+ENABLE_GENERATION=true             # Enable auto-generation
 ARTICLES_PER_CATEGORY_PER_DAY=2    # Articles per category per day
 MAX_CATEGORIES_PER_RUN=3           # Categories processed per run
-MAX_TRANSLATIONS_PER_MASTER=6      # Translations per article
 
-# Error Handling
+# Error Handling & Logging
 STOP_ON_ERROR=true                 # Stop process on errors
 LOG_RETENTION_DAYS=10              # Days to keep logs
-
-# Timing Optimization
 DEBUG_GENERATION=true              # Enable detailed logging
 ```
 
@@ -70,7 +65,7 @@ The `src/config.js` file now includes:
 
 ```javascript
 generation: {
-  cronSchedule: '*/30 6-11 * * 2-4',    // Optimal timing
+  enabled: true,                         // Enable auto-generation
   articlesPerCategoryPerDay: 2,          // Category quota
   maxCategoriesPerRun: 3,                // Prevent overload
   stopOnError: true,                     // Token protection

@@ -99,6 +99,90 @@ const options = {
           },
           required: ['data', 'language'],
         },
+        GenerationRequest: {
+          type: 'object',
+          properties: {
+            category: {
+              type: 'string',
+              example: 'technology',
+              description: 'Category slug for article generation'
+            },
+          },
+          required: ['category'],
+        },
+        TranslationRequest: {
+          type: 'object',
+          properties: {
+            slug: {
+              type: 'string',
+              example: 'how-to-fix-computer-wont-start-troubleshooting-guide',
+              description: 'Slug of the English article to translate'
+            },
+            language: {
+              type: 'string',
+              example: 'de',
+              description: 'Target language code (de, fr, es, pt, ar, hi)'
+            },
+          },
+          required: ['slug', 'language'],
+        },
+        CategoryGenerationDetails: {
+          type: 'object',
+          properties: {
+            category: { type: 'string', example: 'technology' },
+            articlesGenerated: { type: 'integer', example: 2 },
+            translationsCompleted: { type: 'integer', example: 12 },
+            languages: {
+              type: 'array',
+              items: { type: 'string' },
+              example: ['de', 'fr', 'es', 'pt', 'ar', 'hi']
+            }
+          },
+          required: ['category', 'articlesGenerated', 'translationsCompleted', 'languages'],
+        },
+        GenerationRunResponse: {
+          type: 'object',
+          properties: {
+            status: {
+              type: 'string',
+              enum: ['complete', 'partial', 'error'],
+              example: 'complete'
+            },
+            message: {
+              type: 'string',
+              example: 'Generation complete for today'
+            },
+            details: {
+              type: 'object',
+              properties: {
+                categoriesProcessed: {
+                  type: 'array',
+                  items: { $ref: '#/components/schemas/CategoryGenerationDetails' }
+                },
+                totalArticlesGenerated: { type: 'integer', example: 6 },
+                totalTranslationsCompleted: { type: 'integer', example: 36 },
+                executionTimeMs: { type: 'integer', example: 45000 },
+                timestamp: { type: 'string', format: 'date-time' }
+              },
+              required: ['categoriesProcessed', 'totalArticlesGenerated', 'totalTranslationsCompleted', 'executionTimeMs', 'timestamp'],
+            }
+          },
+          required: ['status', 'message', 'details'],
+        },
+        ApiResponseSingleArticle: {
+          type: 'object',
+          properties: {
+            data: { $ref: '#/components/schemas/Article' },
+          },
+          required: ['data'],
+        },
+        ApiResponseGenerationRun: {
+          type: 'object',
+          properties: {
+            data: { $ref: '#/components/schemas/GenerationRunResponse' },
+          },
+          required: ['data'],
+        },
       },
       parameters: {
         AcceptLanguage: {

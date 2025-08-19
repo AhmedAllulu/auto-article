@@ -25,25 +25,25 @@ function calculateTrendingScore(totalViews, uniqueViews, daysOld, recentViews24h
 async function isUniqueView(type, contentId, userIp, period = 'daily') {
   // Validate input parameters
   const numericContentId = parseInt(contentId);
-  if (!Number.isInteger(numericContentId) || numericContentId <= 0) {
+  if (!Number.isInteger(numericContentId)) {
     console.error(`Invalid contentId for ${type} tracking:`, contentId);
     return false; // Don't count as unique if ID is invalid
   }
-  
+
   const table = type === 'article' ? 'article_views' : 'category_views';
   const column = type === 'article' ? 'article_id' : 'category_id';
-  
-  const timeCondition = period === 'daily' 
+
+  const timeCondition = period === 'daily'
     ? "viewed_at::date = CURRENT_DATE"
     : "viewed_at >= CURRENT_DATE - INTERVAL '30 days'";
-  
+
   try {
     const result = await query(`
-      SELECT COUNT(*) as count 
-      FROM ${table} 
+      SELECT COUNT(*) as count
+      FROM ${table}
       WHERE ${column} = $1 AND user_ip = $2 AND ${timeCondition}
     `, [numericContentId, userIp]);
-    
+
     return parseInt(result.rows[0].count) === 0;
   } catch (error) {
     console.error(`Error checking unique view for ${type} ${numericContentId}:`, error.message);
@@ -56,33 +56,81 @@ async function isUniqueView(type, contentId, userIp, period = 'daily') {
  */
 export async function trackArticleView(req, articleData) {
   try {
-    // Validate input data
-    if (!articleData || !articleData.id) {
+    // Basic input validation
+    if (!articleData) {
       console.error('Invalid article data for tracking:', articleData);
       return;
     }
-    
+
+    // Handle both UUID and integer article IDs
+    let articleUuid = null;
+    let numericArticleId = null;
+
+    // If we have an ID, determine if it's a UUID or integer
+    if (articleData.id) {
+      const idStr = String(articleData.id);
+      // Check if it looks like a UUID (contains hyphens and is 36 chars)
+      if (idStr.includes('-') && idStr.length === 36) {
+        articleUuid = idStr;
+        // For view tracking, we need a numeric ID - use a hash of the UUID
+        numericArticleId = Math.abs(idStr.split('').reduce((a, b) => {
+          a = ((a << 5) - a) + b.charCodeAt(0);
+          return a & a;
+        }, 0));
+      } else {
+        // Try to parse as integer - this shouldn't happen with UUID-based articles
+        // but we'll handle it gracefully
+        const parsed = parseInt(idStr);
+        if (Number.isInteger(parsed) && parsed > 0) {
+          numericArticleId = parsed;
+          // For integer IDs, we can't update the articles table since it expects UUIDs
+          // Log this case for debugging
+          console.warn(`Received integer article ID ${parsed} - cannot update articles table`);
+        }
+      }
+    }
+
+    // If we don't have a valid ID, try to resolve by slug
+    if ((!articleUuid && !numericArticleId) && articleData.slug) {
+      try {
+        const langCode = articleData.language_code || 'en';
+        const tableName = `articles_${langCode}`;
+        const res = await query(
+          `SELECT id, category_id FROM ${tableName} WHERE slug = $1 LIMIT 1`,
+          [articleData.slug]
+        );
+        if (res.rowCount > 0) {
+          articleUuid = res.rows[0].id;
+          if (!articleData.category_id) articleData.category_id = res.rows[0].category_id;
+          // Generate numeric ID from UUID for tracking
+          numericArticleId = Math.abs(articleUuid.split('').reduce((a, b) => {
+            a = ((a << 5) - a) + b.charCodeAt(0);
+            return a & a;
+          }, 0));
+        }
+      } catch (error) {
+        console.error('Error looking up article by slug:', error.message);
+      }
+    }
+
+    if (!articleUuid && !numericArticleId) {
+      console.error('Invalid article data for tracking - no valid ID found:', articleData);
+      return;
+    }
+
     const userIp = req.ip || req.connection.remoteAddress || 'unknown';
     const userAgent = req.get('User-Agent') || 'unknown';
     const referrer = req.get('Referer') || req.get('Referrer') || null;
     const sessionId = generateSessionId(userIp, userAgent);
-    
-    // Ensure IDs are properly converted to integers
-    const articleId = parseInt(articleData.id);
+
     const categoryId = articleData.category_id ? parseInt(articleData.category_id) : null;
-    
-    if (!Number.isInteger(articleId) || articleId <= 0) {
-      console.error('Invalid article ID for tracking:', articleData.id);
-      return;
-    }
-    
     const { slug, language_code } = articleData;
-    
-    // Check if this is a unique view
-    const isDailyUnique = await isUniqueView('article', articleId, userIp, 'daily');
-    const isMonthlyUnique = await isUniqueView('article', articleId, userIp, 'monthly');
-    
-    // Insert view record
+
+    // Check if this is a unique view (using numeric ID for tracking)
+    const isDailyUnique = await isUniqueView('article', numericArticleId, userIp, 'daily');
+    const isMonthlyUnique = await isUniqueView('article', numericArticleId, userIp, 'monthly');
+
+    // Insert view record (using numeric ID for tracking)
     await query(`
       INSERT INTO article_views (
         article_id, article_slug, language_code, category_id,
@@ -90,36 +138,38 @@ export async function trackArticleView(req, articleData) {
         is_unique_daily, is_unique_monthly
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     `, [
-      articleId, slug, language_code, categoryId,
+      numericArticleId, slug, language_code, categoryId,
       userIp, userAgent, referrer, sessionId,
       isDailyUnique, isMonthlyUnique
     ]);
-    
-    // Update article counters
-    const tableName = `articles_${language_code}`;
-    await query(`
-      UPDATE ${tableName} 
-      SET 
-        total_views = total_views + 1,
-        unique_views = unique_views + $1,
-        last_viewed = now()
-      WHERE id = $2
-    `, [isDailyUnique ? 1 : 0, articleId]);
-    
+
+    // Update article counters (using UUID for the articles table)
+    if (articleUuid) {
+      const tableName = `articles_${language_code}`;
+      await query(`
+        UPDATE ${tableName}
+        SET
+          total_views = total_views + 1,
+          unique_views = unique_views + $1,
+          last_viewed = now()
+        WHERE id = $2
+      `, [isDailyUnique ? 1 : 0, articleUuid]);
+    }
+
     // Update category counters if category exists
     if (categoryId) {
       await query(`
-        UPDATE categories 
-        SET 
+        UPDATE categories
+        SET
           total_views = total_views + 1,
           unique_views = unique_views + $1,
           last_viewed = now()
         WHERE id = $2
       `, [isDailyUnique ? 1 : 0, categoryId]);
     }
-    
+
     console.log(`📈 Tracked view: Article ${slug} (${language_code}) - Unique: ${isDailyUnique}`);
-    
+
   } catch (error) {
     console.error('Error tracking article view:', error);
     // Don't throw error - view tracking shouldn't break the main request
@@ -282,13 +332,13 @@ export async function updateTrendingScores() {
       `);
     }
     
-    // Update category trending scores
+    // Update category trending scores (without created_at dependency)
     await query(`
       UPDATE categories 
       SET trending_score = (
         LN(GREATEST(total_views, 1)) * 0.4 + 
         LN(GREATEST(unique_views, 1)) * 0.6
-      ) * GREATEST(0.1, 1.0 / (EXTRACT(days FROM (now() - created_at)) + 1))
+      ) * 0.8
     `);
     
     console.log('✅ Trending scores updated');

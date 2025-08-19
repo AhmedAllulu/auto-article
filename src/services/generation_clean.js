@@ -9,8 +9,8 @@ import { generateRobustArticle } from './oneMinAI.js';
 import { getPrompt } from '../prompts/index.js';
 import { buildPrompt as buildTranslationPrompt } from '../prompts/translation.js';
 import { fetchUnsplashImageUrl } from './unsplash.js';
-import { query, withTransaction } from '../database/index.js';
-import config from '../config/config.js';
+import { query, withTransaction } from '../db.js';
+import { config } from '../config.js';
 import { articlesTable } from '../utils/articlesTable.js';
 
 // Logging utility
@@ -29,8 +29,8 @@ export function toSlug(title) {
     .replace(/^-|-$/g, '');       // Remove leading/trailing hyphens
 }
 
-export function canonicalForSlug(slug) {
-  return `${config.website.baseUrl}/${slug}`;
+export function canonicalForSlug(slug, languageCode = 'en') {
+  return `${config.seo.canonicalBaseUrl}/${languageCode}/${slug}`;
 }
 
 export function estimateReadingTimeMinutes(content) {
@@ -749,7 +749,7 @@ async function generateTranslationArticle({ lang, category, masterJson, slugBase
   const { system: ts, user: tu } = buildTranslationPrompt(lang, masterJson);
   genLog('AI translation start', { category: category.slug, lang });
   const tTransStart = Date.now();
-  // SINGLE AI CALL for natural text translation using OpenAI GPT-3.5
+  // SINGLE AI CALL for natural text translation using OpenAI gpt-5-nano
   const aiT = await openAIChat({ system: ts, user: tu, model: config.openAI.defaultModel });
   genLog('AI translation done', { category: category.slug, lang, ms: Date.now() - tTransStart });
   

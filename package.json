@@ -14,7 +14,9 @@
     "import:csv": "node scripts/import-articles-from-csv.js /var/www/html/auto-article/Articles.csv",
     "format": "prettier --write \"src/**/*.js\" \"scripts/**/*.js\"",
     "test:ai": "node scripts/test-ai-api.js",
-    "generate:article": "node scripts/generate-article.js"
+    "generate:article": "node scripts/generate-article.js",
+    "check:generation": "node scripts/check-generation-status.js",
+    "enable:generation": "chmod +x enable-auto-generation.sh && ./enable-auto-generation.sh"
   },
   "keywords": [],
   "author": "",

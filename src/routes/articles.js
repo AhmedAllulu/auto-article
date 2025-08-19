@@ -215,7 +215,7 @@ router.get('/slug/:slug', async (req, res) => {
     const tblPreferred = articlesTable(language);
     // Search preferred language table first
     let result = await query(
-      `SELECT a.*, c.name AS category_name, c.slug AS category_slug
+      `SELECT a.*, a.id AS article_id, c.id AS category_id, c.name AS category_name, c.slug AS category_slug
        FROM ${tblPreferred} a
        LEFT JOIN categories c ON c.id = a.category_id
        WHERE a.slug = ANY($1)
@@ -237,7 +237,7 @@ router.get('/slug/:slug', async (req, res) => {
         const fallbackTable = articlesTable(lang);
         try {
           result = await query(
-            `SELECT a.*, c.name AS category_name, c.slug AS category_slug
+            `SELECT a.*, a.id AS article_id, c.id AS category_id, c.name AS category_name, c.slug AS category_slug
              FROM ${fallbackTable} a
              LEFT JOIN categories c ON c.id = a.category_id
              WHERE a.slug = ANY($1)
@@ -264,10 +264,10 @@ router.get('/slug/:slug', async (req, res) => {
     // Track article view
     if (res.trackView) {
       await res.trackView('article', {
-        id: parseInt(article.id), // Ensure ID is integer
+        id: article.article_id,
         slug: article.slug,
         language_code: article.language_code || language,
-        category_id: parseInt(article.category_id) || null // Ensure category_id is integer
+        category_id: article.category_id || null
       });
     }
     
@@ -283,15 +283,25 @@ router.get('/:id/related', async (req, res) => {
   const id = req.params.id;
   try {
     const baseTbl = articlesTable(language);
+
+    // Validate ID format - for language-specific tables, we expect UUIDs
+    if (baseTbl !== 'articles') {
+      // Check if ID looks like a UUID (contains hyphens and is 36 chars)
+      const idStr = String(id);
+      if (!idStr.includes('-') || idStr.length !== 36) {
+        return res.status(400).json({ error: 'Invalid article ID format. Expected UUID.' });
+      }
+    }
+
     // For language-specific tables, we need to handle the language_code column differently
     const baseQuerySql = baseTbl === 'articles'
       ? `SELECT category_id, language_code, slug FROM ${baseTbl} WHERE id = $1`
       : `SELECT category_id, '${language}' AS language_code, slug FROM ${baseTbl} WHERE id = $1`;
-    
+
     const baseRes = await query(baseQuerySql, [id]);
     if (baseRes.rowCount === 0) return res.status(404).json({ error: 'Not found' });
     const { category_id, slug } = baseRes.rows[0];
-    
+
     const relQuerySql = baseTbl === 'articles'
       ? `SELECT id, title, slug, summary, meta_description, image_url, language_code, published_at, created_at
          FROM ${baseTbl}
@@ -303,13 +313,14 @@ router.get('/:id/related', async (req, res) => {
          WHERE category_id = $1 AND id <> $2 AND slug <> $3
          ORDER BY COALESCE(published_at, created_at) DESC, id DESC
          LIMIT 10`;
-    
+
     const relParams = baseTbl === 'articles' ? [category_id, language, id, slug] : [category_id, id, slug];
     const rel = await query(relQuerySql, relParams);
     res.set('Vary', 'Accept-Language');
     res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     res.json({ data: rel.rows, language });
   } catch (err) {
+    console.error('Error in related articles route:', err);
     res.status(500).json({ error: 'Failed to load related articles' });
   }
 });

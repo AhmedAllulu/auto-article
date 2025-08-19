@@ -1,4 +1,5 @@
-import { translateChunk } from './translator.js';
+import { chatCompletion } from './openAI.js';
+import { config } from '../config.js';
 
 /**
  * Parse HTML and translate only text content while preserving exact structure
@@ -7,39 +8,117 @@ export class HTMLTranslator {
   constructor(targetLang) {
     this.targetLang = targetLang;
     this.translatedCache = new Map();
+
+    // Track total tokens used by this translator instance
+    this._promptTokens = 0;
+    this._completionTokens = 0;
+  }
+
+  /**
+   * Return aggregated token statistics for this translation session
+   * @returns {{ input: number, output: number }}
+   */
+  getTokenStats() {
+    return {
+      input: this._promptTokens,
+      output: this._completionTokens,
+    };
   }
 
   /**
    * Translate HTML content while preserving exact structure
+   * Strategy for GPT-5-nano (smaller context window)
+   *   1. If the whole article fits (≈ <3.5k tokens) → single shot
+   *   2. If it fits in two halves (≈ <7k tokens) → split in two requests
+   *   3. Otherwise (very rare) fall back to paragraph-block segmentation
    */
   async translateHTML(htmlContent) {
     if (!htmlContent) return '';
 
-    // Split content into HTML tags and text segments
-    const segments = this.parseHTMLSegments(htmlContent);
-    
-    // Translate only text segments
-    const translatedSegments = [];
-    for (const segment of segments) {
-      if (segment.isText && segment.content.trim()) {
-        // Always translate text unless it's purely technical content
-        if (this.shouldSkipTranslation(segment.content)) {
-          translatedSegments.push(segment.content);
-        } else {
-          const translated = await this.translateTextSegment(segment.content);
-          translatedSegments.push(translated);
-        }
-      } else if (segment.isScript) {
-        // Handle script tags (JSON-LD) specially
-        const translatedScript = await this.translateJsonLd(segment.content);
-        translatedSegments.push(translatedScript);
-      } else {
-        // Keep HTML tags exactly as-is
-        translatedSegments.push(segment.content);
-      }
+    const MAX_TOKENS_PER_CALL = 3500; // safe margin for gpt-5-nano (4k ctx?)
+
+    // ─── Helper to estimate tokens (rough: 1 token ≈ 4 chars) ────────────
+    const approxTokens = (str) => Math.ceil(str.length / 4);
+    const totalTokens = approxTokens(htmlContent);
+
+    // ─── 1) Single-shot when it fits ─────────────────────────────────────
+    if (totalTokens <= MAX_TOKENS_PER_CALL) {
+      return (await this.translateWhole(htmlContent)).translated;
     }
 
+    // ─── 2) Two-part translation when still under 2× window ──────────────
+    if (totalTokens <= MAX_TOKENS_PER_CALL * 2) {
+      const { part1, part2 } = this.splitInTwo(htmlContent);
+      const t1 = await this.translateWhole(part1);
+      const t2 = await this.translateWhole(part2);
+      return t1.translated + t2.translated;
+    }
+
+    // ─── 3) Fallback: previous paragraph-block segmentation ──────────────
+    // Split content into HTML tags and text segments
+    const segments = this.parseHTMLSegments(htmlContent);
+
+    // Translate segments concurrently while preserving order
+    const translatedSegments = await Promise.all(
+      segments.map(async (segment) => {
+        if (segment.isText && segment.content.trim()) {
+          if (this.shouldSkipTranslation(segment.content)) {
+            return segment.content;
+          }
+          return this.translateTextSegment(segment.content);
+        }
+        if (segment.isScript) {
+          return this.translateJsonLd(segment.content);
+        }
+        // Non-text HTML tag, return as-is
+        return segment.content;
+      })
+    );
+
     return translatedSegments.join('');
+  }
+
+  /**
+   * Translate a full HTML chunk in one request and track tokens
+   */
+  async translateWhole(htmlChunk) {
+    const { content: translated, usage } = await chatCompletion({
+      system: `You are a professional translator. Translate the USER HTML into ${this.targetLang}.
+
+RULES
+1. Preserve every HTML tag and attribute exactly; do NOT add or remove tags, newlines are fine.
+2. Translate ONLY the human-readable text, including:
+   • visible paragraph / heading text
+   • the contents of <title>, <meta name="description" content="…">, and OpenGraph/Twitter description meta tags
+   • string values INSIDE JSON-LD for keys: headline, description, text, name, articleSection, keywords
+3. DO NOT translate URLs, image filenames, @context, @type, or any field that already looks like a URL.
+4. Keep markdown markers (**, -, etc.) unchanged.
+5. Output ONLY the translated HTML string.`,
+      user: htmlChunk,
+      model: config.openAI.defaultModel,
+    });
+
+    if (usage) {
+      this._promptTokens += usage.prompt_tokens || 0;
+      this._completionTokens += usage.completion_tokens || 0;
+    }
+
+    return { translated };
+  }
+
+  /**
+   * Split HTML roughly in half at a tag boundary
+   */
+  splitInTwo(html) {
+    const midpoint = Math.floor(html.length / 2);
+    // Find the next closing tag boundary AFTER midpoint to keep structure
+    let splitIdx = html.indexOf('>', midpoint);
+    if (splitIdx === -1) {
+      splitIdx = midpoint; // fallback – unlikely but safe
+    }
+    const part1 = html.slice(0, splitIdx + 1);
+    const part2 = html.slice(splitIdx + 1);
+    return { part1, part2 };
   }
 
   /**
@@ -134,7 +213,26 @@ export class HTMLTranslator {
     }
 
     try {
-      const translated = await translateChunk(this.targetLang, trimmedText);
+      // Call OpenAI directly so we can capture token usage stats
+      const { content: translated, usage } = await chatCompletion({
+        system: `You are a professional translator. Translate the USER content into ${this.targetLang}.
+
+CRITICAL RULES:
+- Translate EVERY WORD including proper nouns, technical terms, and all text
+- Preserve markdown formatting (**, -, numbers, etc.) exactly
+- Keep punctuation and structure identical
+- Do NOT keep any English words unless they are URLs or code
+- Output ONLY the translation, no explanations`,
+        user: trimmedText,
+        model: config.openAI.defaultModel,
+      });
+
+      // Aggregate token usage
+      if (usage) {
+        this._promptTokens += usage.prompt_tokens || 0;
+        this._completionTokens += usage.completion_tokens || 0;
+      }
+
       this.translatedCache.set(trimmedText, translated);
       
       // Preserve leading/trailing whitespace from original
@@ -149,95 +247,96 @@ export class HTMLTranslator {
   }
 
   /**
-   * Translate specific metadata fields in HTML
+   * Translate specific metadata fields (title, meta description, JSON-LD) in the HTML.
    */
   async translateMetadata(html, originalTitle, originalMetaDescription) {
     let result = html;
 
-    // Translate title in HTML
+    // --- Title ------------------------------------------------------------------
     if (originalTitle) {
-      const translatedTitle = await translateChunk(this.targetLang, originalTitle);
+      const translatedTitle = await this.translateTextSegment(originalTitle);
       result = result.replace(
         new RegExp(`<h1[^>]*>${this.escapeRegex(originalTitle)}</h1>`, 'gi'),
         `<h1>${translatedTitle}</h1>`
       );
+
+      // Update JSON-LD headline if present
+      result = result.replace(
+        /"headline":"([^"]+)"/g,
+        (match, headline) => {
+          if (headline === originalTitle) {
+            return `"headline":"${translatedTitle}"`;
+          }
+          return match;
+        }
+      );
     }
 
-    // Update JSON-LD schema with translated content
-    result = result.replace(
-      /"headline":"([^"]+)"/g,
-      (match, headline) => {
-        if (headline === originalTitle) {
-          return `"headline":"${translatedTitle || headline}"`;
-        }
-        return match;
-      }
-    );
+    // --- Meta description -------------------------------------------------------
+    if (originalMetaDescription) {
+      const translatedMetaDesc = await this.translateTextSegment(originalMetaDescription);
+      // Replace common meta description tag if exists
+      result = result.replace(
+        /<meta[^>]*name="description"[^>]*content="([^"]*)"[^>]*>/i,
+        (match) => match.replace(originalMetaDescription, translatedMetaDesc)
+      );
+    }
 
     return result;
   }
+
+  // ============= JSON-LD Helpers ==============================================
 
   /**
    * Translate JSON-LD script content while preserving structure
    */
   async translateJsonLd(scriptContent) {
     try {
-      // Extract JSON content from script tag
+      // Extract JSON inside the script tag
       const jsonMatch = scriptContent.match(/<script[^>]*>([\s\S]*?)<\/script>/);
       if (!jsonMatch) return scriptContent;
 
       const jsonString = jsonMatch[1].trim();
       let jsonData;
-      
       try {
         jsonData = JSON.parse(jsonString);
-      } catch (e) {
-        // If JSON parsing fails, return original
+      } catch (_) {
+        // Not valid JSON – return original
         return scriptContent;
       }
 
-      // Translate specific fields in JSON-LD
+      // Recursively translate translatable fields
       await this.translateJsonObject(jsonData);
 
-      // Reconstruct script tag with translated JSON
-      const translatedJsonString = JSON.stringify(jsonData);
-      return scriptContent.replace(jsonString, translatedJsonString);
-      
-    } catch (error) {
-      console.error('Error translating JSON-LD:', error);
+      const translatedJson = JSON.stringify(jsonData);
+      return scriptContent.replace(jsonString, translatedJson);
+    } catch (err) {
+      console.error('Error translating JSON-LD:', err);
       return scriptContent;
     }
   }
 
   /**
-   * Recursively translate translatable fields in JSON object
+   * Recursively translate fields in a JSON object/array.
    */
   async translateJsonObject(obj) {
     if (Array.isArray(obj)) {
-      for (const item of obj) {
-        await this.translateJsonObject(item);
+      for (let i = 0; i < obj.length; i++) {
+        if (typeof obj[i] === 'string') {
+          obj[i] = await this.translateTextSegment(obj[i]);
+        } else if (typeof obj[i] === 'object') {
+          await this.translateJsonObject(obj[i]);
+        }
       }
-    } else if (obj && typeof obj === 'object') {
-      // Fields that should be translated
-      const translatableFields = [
-        'headline', 'description', 'text', 'name', 
-        'articleSection', 'keywords'
-      ];
+      return;
+    }
 
+    if (obj && typeof obj === 'object') {
+      const translatableKeys = ['headline', 'description', 'text', 'name', 'articleSection', 'keywords'];
       for (const [key, value] of Object.entries(obj)) {
-        if (translatableFields.includes(key) && typeof value === 'string') {
-          // Skip URLs and technical identifiers
+        if (translatableKeys.includes(key) && typeof value === 'string') {
           if (!value.startsWith('http') && !value.startsWith('@') && value.length > 2) {
             obj[key] = await this.translateTextSegment(value);
-          }
-        } else if (Array.isArray(value)) {
-          // Handle arrays (like articleSection, keywords)
-          for (let i = 0; i < value.length; i++) {
-            if (typeof value[i] === 'string' && !value[i].startsWith('http')) {
-              value[i] = await this.translateTextSegment(value[i]);
-            } else if (typeof value[i] === 'object') {
-              await this.translateJsonObject(value[i]);
-            }
           }
         } else if (typeof value === 'object') {
           await this.translateJsonObject(value);
@@ -246,8 +345,9 @@ export class HTMLTranslator {
     }
   }
 
-  escapeRegex(string) {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Utility: escape special regex chars
+  escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }
 
