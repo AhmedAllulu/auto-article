@@ -21,6 +21,7 @@
     "test:html-sitemap": "node scripts/test-html-sitemap.js",
     "test:log-analysis": "node scripts/test-log-analysis.js",
     "test:freshness-sitemap": "node scripts/test-freshness-sitemap.js",
+    "audit:production": "node scripts/production-audit-fixes.js",
     "generate:article": "node scripts/generate-article.js",
     "check:generation": "node scripts/check-generation-status.js",
     "enable:generation": "chmod +x enable-auto-generation.sh && ./enable-auto-generation.sh"

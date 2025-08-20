@@ -395,7 +395,22 @@ async function fetchSitemapData(language = 'en') {
     
   } catch (error) {
     console.error('Error fetching sitemap data:', error);
-    throw error;
+
+    // Return fallback data instead of throwing
+    return {
+      categories: [],
+      recentArticles: [],
+      staticPages: [
+        { path: '/', title: 'Home', description: 'Latest articles and trending content' },
+        { path: '/categories', title: 'All Categories', description: 'Browse articles by category' },
+        { path: '/about', title: 'About Us', description: 'Learn more about our mission and team' }
+      ],
+      stats: {
+        totalArticles: 0,
+        totalCategories: 0,
+        totalPages: 3
+      }
+    };
   }
 }
 

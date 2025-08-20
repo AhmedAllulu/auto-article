@@ -125,11 +125,20 @@ function calculateChangeFreq(article, categorySlug = 'default') {
 
 const router = express.Router();
 
-// Debug endpoint to check database connectivity
+// Debug endpoint to check database connectivity and content
 router.get('/debug/db-health', async (req, res) => {
   try {
-    const result = await query('SELECT 1 as test');
-    res.json({ status: 'ok', dbConnected: true, testResult: result.rows });
+    const dbTest = await query('SELECT 1 as test');
+    const categoriesTest = await query('SELECT COUNT(*) as count FROM categories');
+    const articlesTest = await query('SELECT COUNT(*) as count FROM articles_en');
+
+    res.json({
+      status: 'ok',
+      dbConnected: true,
+      testResult: dbTest.rows,
+      categoriesCount: categoriesTest.rows[0].count,
+      articlesCount: articlesTest.rows[0].count
+    });
   } catch (err) {
     console.error('DB Health check failed:', err);
     res.status(500).json({ status: 'error', dbConnected: false, error: err.message });
@@ -675,10 +684,12 @@ router.get('/sitemaps/:file', async (req, res) => {
  */
 router.get('/sitemap-fresh.xml', async (req, res) => {
   try {
+    console.log('Generating freshness sitemap...');
     const freshSitemap = await generateFreshnessSitemap();
     res.setHeader('Content-Type', 'application/xml; charset=UTF-8');
     res.setHeader('Cache-Control', 'public, max-age=1800'); // 30 minutes cache (more frequent updates)
     res.setHeader('X-Sitemap-Type', 'freshness');
+    console.log('Freshness sitemap generated successfully');
     res.send(freshSitemap);
   } catch (error) {
     console.error('Error generating freshness sitemap:', error);
