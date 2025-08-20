@@ -32,6 +32,32 @@ async function isUnsplashPhotoUsed({ baseUrl, photoId }) {
   }
 }
 
+// Helper function to optimize Unsplash image URL for next-gen formats
+function optimizeUnsplashUrl(url, options = {}) {
+  if (!url || !url.includes('images.unsplash.com')) return url;
+
+  try {
+    const urlObj = new URL(url);
+
+    // Add auto=format for automatic format selection (WebP/AVIF)
+    urlObj.searchParams.set('auto', 'format');
+
+    // Add compression quality if not already set
+    if (!urlObj.searchParams.has('q')) {
+      urlObj.searchParams.set('q', '85');
+    }
+
+    // Add width/height if provided
+    if (options.width) urlObj.searchParams.set('w', options.width);
+    if (options.height) urlObj.searchParams.set('h', options.height);
+
+    return urlObj.toString();
+  } catch (err) {
+    console.error('Error optimizing Unsplash URL:', err);
+    return url;
+  }
+}
+
 export async function fetchUnsplashImageUrl(query_param) {
   if (!config.unsplash.accessKey) return null;
   try {
@@ -50,7 +76,8 @@ export async function fetchUnsplashImageUrl(query_param) {
       if (imageUrl) {
         const isUsed = await isUnsplashPhotoUsed({ baseUrl: normalizeUrl(imageUrl), photoId: photo?.id });
         if (!isUsed) {
-          return imageUrl;
+          // Optimize the URL for next-gen formats
+          return optimizeUnsplashUrl(imageUrl);
         }
       }
     }
@@ -58,7 +85,8 @@ export async function fetchUnsplashImageUrl(query_param) {
     // If all images are already used, return the first one as fallback
     // This prevents the system from breaking if all fetched images are duplicates
     const fallbackPhoto = results[0];
-    return fallbackPhoto?.urls?.regular || fallbackPhoto?.urls?.full || null;
+    const fallbackUrl = fallbackPhoto?.urls?.regular || fallbackPhoto?.urls?.full || null;
+    return fallbackUrl ? optimizeUnsplashUrl(fallbackUrl) : null;
   } catch (err) {
     console.error('Error fetching Unsplash image:', err);
     return null;
