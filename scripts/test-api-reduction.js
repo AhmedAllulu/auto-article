@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import HTMLTranslator from '../src/services/htmlTranslator.js';
+import { HTMLTranslator } from '../src/services/htmlTranslator.js';
 
 // Simulate the real-world scenario: 60 articles being translated
 async function simulateRealWorldTranslation() {

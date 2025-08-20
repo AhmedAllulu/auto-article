@@ -27,6 +27,17 @@ function _isQuotaError(err) {
   return false;
 }
 
+function _isTokenLimitError(err) {
+  const status = err?.response?.status;
+  const message = err?.response?.data?.error?.message?.toLowerCase() || '';
+  return status === 400 && (
+    message.includes('context length') ||
+    message.includes('token limit') ||
+    message.includes('maximum context') ||
+    message.includes('too many tokens')
+  );
+}
+
 function _rotateKey(err) {
   if (_isQuotaError(err) && _currentIdx < _apiKeys.length - 1) {
     _currentIdx += 1;
@@ -58,9 +69,16 @@ export async function chatCompletion({ system, user, model = config.openAI.defau
     const usage = data.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
     return { content, usage, model: data.model || model };
   } catch (err) {
+    // Check for token limit errors first (don't rotate keys for these)
+    if (_isTokenLimitError(err)) {
+      const msg = `Token limit exceeded: ${err?.response?.data?.error?.message || 'Content too long for model'}`;
+      throw new Error(msg);
+    }
+
     if (_rotateKey(err)) {
       return chatCompletion({ system, user, model, temperature });
     }
+
     const status = err?.response?.status;
     const bodySnippet = err?.response?.data ? JSON.stringify(err.response.data).slice(0, 400) : '';
     const msg = `OpenAI API error (${status || 'no-status'}): ${bodySnippet || err?.message || 'Unknown error'}`;

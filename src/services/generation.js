@@ -11,7 +11,7 @@ import { buildPrompt as buildTranslationPrompt } from '../prompts/translation.js
 // Import table routing helper
 import { articlesTable, LANG_SHARDED_ARTICLE_TABLES } from '../utils/articlesTable.js';
 import { translateChunk } from './translator.js';
-import HTMLTranslator from './htmlTranslator.js';
+import { HTMLTranslator } from './htmlTranslator.js';
 import { notifySearchEnginesNewArticle } from './seoNotificationService.js';
 
 // Debug logging for generation flow (enable with DEBUG_GENERATION=true)
@@ -964,7 +964,7 @@ async function createMasterArticle(category, { preferWebSearch = false } = {}) {
 
 // ========== TRANSLATION FUNCTIONS ==========
 
-async function generateTranslationArticle({ lang, category, masterSlug, masterTitle, masterSummary, imageUrl }) {
+async function generateTranslationArticle({ lang, category, masterSlug, masterTitle, masterSummary, imageUrl, maxChunks }) {
   genLog('AI translation start', { category: category.slug, lang, masterSlug });
   const tTransStart = Date.now();
 
@@ -985,7 +985,9 @@ async function generateTranslationArticle({ lang, category, masterSlug, masterTi
   const originalMetaDesc = masterArticle.meta_description;
 
   // Use HTML-aware translator to preserve exact structure
-  const translator = new HTMLTranslator(lang);
+  // Use API-provided maxChunks or fall back to config default
+  const effectiveMaxChunks = maxChunks !== undefined ? maxChunks : config.translation.defaultChunkCount;
+  const translator = new HTMLTranslator(lang, { maxChunks: effectiveMaxChunks });
 
   // Create a combined content structure that includes all text to be translated
   // This reduces API calls from 4 per article to just 2 (when split in half)

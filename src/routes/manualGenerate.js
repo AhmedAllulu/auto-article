@@ -2,6 +2,7 @@ import express from 'express';
 import { query, withTransaction } from '../db.js';
 import { createMasterArticle, insertArticle, updateDailyTokenUsage, incrementJobCount } from '../services/generation.js';
 import { articlesTable } from '../utils/articlesTable.js';
+import { config } from '../config.js';
 import {
   AppError,
   ErrorTypes,
@@ -151,6 +152,7 @@ router.post('/article', async (req, res) => {
  *       - Preserves HTML structure and updates metadata appropriately
  *       - Can be triggered through Swagger UI regardless of optimal timing windows
  *       - Does not count toward English article quotas (translations are unlimited)
+ *       - Supports manual chunking control via `maxChunks` parameter or `TRANSLATION_DEFAULT_CHUNK_COUNT` config
  *     requestBody:
  *       required: true
  *       content:
@@ -200,8 +202,25 @@ router.post('/translate', async (req, res) => {
     });
 
     // Validate input
-    const { slug, language } = req.body || {};
+    const { slug, language, maxChunks } = req.body || {};
     validateRequired({ slug, language }, ['slug', 'language'], 'translation request');
+
+    // Determine effective maxChunks: API parameter > config default > automatic (0)
+    let effectiveMaxChunks = maxChunks;
+    if (effectiveMaxChunks === undefined) {
+      effectiveMaxChunks = config.translation.defaultChunkCount;
+    }
+
+    // Validate maxChunks if provided (0 means automatic chunking)
+    if (effectiveMaxChunks !== undefined && effectiveMaxChunks !== 0) {
+      if (!Number.isInteger(effectiveMaxChunks) || effectiveMaxChunks < 1 || effectiveMaxChunks > 10) {
+        throw new AppError(
+          'maxChunks must be an integer between 1 and 10, or 0 for automatic chunking',
+          ErrorTypes.VALIDATION_ERROR,
+          { maxChunks: effectiveMaxChunks }
+        );
+      }
+    }
 
     // Fetch the base (English) article with enhanced error handling
     const baseArticle = await withDatabaseErrorHandling(async () => {
@@ -254,6 +273,7 @@ router.post('/translate', async (req, res) => {
         masterTitle: baseArticle.title,
         masterSummary: baseArticle.summary,
         imageUrl: baseArticle.image_url,
+        maxChunks: effectiveMaxChunks, // Pass the effective maxChunks parameter
       });
       return result;
     }, 'translation generation');

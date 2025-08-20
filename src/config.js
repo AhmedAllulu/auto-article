@@ -69,7 +69,7 @@ export const config = {
     defaultModel: process.env.AI_DEFAULT_TEXT_MODEL || 'gpt-5-nano',
     fallbackModel: process.env.AI_FALLBACK_MODEL || 'mistral-nemo',
     premiumModel: process.env.AI_PREMIUM_MODEL || 'gpt-5-nano',
-    enableWebSearch: String(process.env.ENABLE_WEB_SEARCH || 'true') === 'true',
+    enableWebSearch: String(process.env.ENABLE_WEB_SEARCH || 'false') === 'false',
     // Controls length and breadth when web search is enabled
     webSearchMaxWords: Number(process.env.AI_WEBSEARCH_MAX_WORDS || 1200),
     webSearchNumSites: Number(process.env.AI_WEBSEARCH_NUM_SITES || 2),
@@ -102,6 +102,17 @@ export const config = {
     articlesPerCategoryPerDay: Number(process.env.ARTICLES_PER_CATEGORY_PER_DAY || 2), // 2 articles per category daily
     stopOnError: String(process.env.STOP_ON_ERROR || 'true') === 'true', // stop process on errors
     logRetentionDays: Number(process.env.LOG_RETENTION_DAYS || 10), // log cleanup period
+  },
+  translation: {
+    // Default chunk count for translations (1-10, or 0 for automatic chunking)
+    // Can be overridden by the maxChunks parameter in API requests
+    defaultChunkCount: (() => {
+      const value = Number(process.env.TRANSLATION_DEFAULT_CHUNK_COUNT || 1);
+      if (value === 0) return 0; // 0 means automatic chunking
+      if (value >= 1 && value <= 10) return value;
+      console.warn(`Invalid TRANSLATION_DEFAULT_CHUNK_COUNT: ${process.env.TRANSLATION_DEFAULT_CHUNK_COUNT}. Using automatic chunking (0).`);
+      return 0;
+    })(),
   },
   seo: {
     canonicalBaseUrl: process.env.CANONICAL_BASE_URL || '',
