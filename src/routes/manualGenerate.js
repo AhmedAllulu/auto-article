@@ -10,6 +10,7 @@ import {
   withApiErrorHandling
 } from '../services/errorHandler.js';
 import { genLog } from '../services/logger.js';
+import { notifySearchEnginesNewArticle } from '../services/seoNotificationService.js';
 
 const router = express.Router();
 

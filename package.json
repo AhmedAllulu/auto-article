@@ -14,6 +14,13 @@
     "import:csv": "node scripts/import-articles-from-csv.js /var/www/html/auto-article/Articles.csv",
     "format": "prettier --write \"src/**/*.js\" \"scripts/**/*.js\"",
     "test:ai": "node scripts/test-ai-api.js",
+    "test:seo": "node scripts/test-seo-notifications.js",
+    "test:sitemap": "node scripts/test-smart-sitemap.js",
+    "test:rss": "node scripts/test-rss-feeds.js",
+    "test:websub": "node scripts/test-websub.js",
+    "test:html-sitemap": "node scripts/test-html-sitemap.js",
+    "test:log-analysis": "node scripts/test-log-analysis.js",
+    "test:freshness-sitemap": "node scripts/test-freshness-sitemap.js",
     "generate:article": "node scripts/generate-article.js",
     "check:generation": "node scripts/check-generation-status.js",
     "enable:generation": "chmod +x enable-auto-generation.sh && ./enable-auto-generation.sh"

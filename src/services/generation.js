@@ -12,6 +12,7 @@ import { buildPrompt as buildTranslationPrompt } from '../prompts/translation.js
 import { articlesTable, LANG_SHARDED_ARTICLE_TABLES } from '../utils/articlesTable.js';
 import { translateChunk } from './translator.js';
 import HTMLTranslator from './htmlTranslator.js';
+import { notifySearchEnginesNewArticle } from './seoNotificationService.js';
 
 // Debug logging for generation flow (enable with DEBUG_GENERATION=true)
 const DEBUG_GENERATION = String(process.env.DEBUG_GENERATION || 'false') === 'true';
@@ -679,7 +680,21 @@ async function insertArticle(client, article) {
       content_hash,
     ]
   );
-  return res.rows[0];
+
+  const insertedArticle = res.rows[0];
+
+  // Notify search engines about new article (async, don't wait)
+  if (insertedArticle) {
+    notifySearchEnginesNewArticle(insertedArticle).catch(error => {
+      genError('SEO notification failed for new article', {
+        slug: insertedArticle.slug,
+        language: insertedArticle.language_code,
+        error: error.message
+      });
+    });
+  }
+
+  return insertedArticle;
 }
 
 async function updateDailyTokenUsage(client, usageList) {

@@ -3,6 +3,126 @@ import { query } from '../db.js';
 import { config } from '../config.js';
 import { articlesTable } from '../utils/articlesTable.js';
 
+/**
+ * Smart Priority and Freshness Calculation for SEO
+ * Based on content age, category importance, and article performance
+ */
+
+// Priority weights by category (higher = more important for crawling)
+const CATEGORY_PRIORITY_WEIGHTS = {
+  'technology': 1.0,
+  'business': 0.95,
+  'finance': 0.95,
+  'health': 0.9,
+  'science': 0.85,
+  'education': 0.8,
+  'travel': 0.75,
+  'sports': 0.7,
+  'entertainment': 0.65,
+  'lifestyle': 0.6,
+  'default': 0.7
+};
+
+// Change frequency based on content type and age
+const CHANGEFREQ_RULES = {
+  // Breaking news and time-sensitive content
+  'breaking': 'hourly',
+  'news': 'daily',
+  'technology': 'daily',
+  'business': 'daily',
+  'finance': 'daily',
+
+  // Evergreen content
+  'education': 'weekly',
+  'health': 'weekly',
+  'travel': 'monthly',
+  'lifestyle': 'monthly',
+
+  // Default fallback
+  'default': 'weekly'
+};
+
+/**
+ * Calculate dynamic priority based on article freshness and importance
+ */
+function calculateArticlePriority(article, categorySlug = 'default') {
+  const now = new Date();
+  const publishedAt = new Date(article.published_at || article.created_at || now);
+  const ageInHours = (now - publishedAt) / (1000 * 60 * 60);
+  const ageInDays = ageInHours / 24;
+
+  // Base priority from category
+  let basePriority = CATEGORY_PRIORITY_WEIGHTS[categorySlug] || CATEGORY_PRIORITY_WEIGHTS.default;
+
+  // Freshness boost - newer content gets higher priority
+  let freshnessFactor = 1.0;
+  if (ageInHours <= 1) {
+    // Brand new content (within 1 hour) - maximum boost
+    freshnessFactor = 1.3;
+  } else if (ageInHours <= 6) {
+    // Very fresh (within 6 hours) - high boost
+    freshnessFactor = 1.2;
+  } else if (ageInHours <= 24) {
+    // Fresh (within 24 hours) - medium boost
+    freshnessFactor = 1.1;
+  } else if (ageInDays <= 7) {
+    // Recent (within 1 week) - small boost
+    freshnessFactor = 1.05;
+  } else if (ageInDays <= 30) {
+    // Normal priority (within 1 month)
+    freshnessFactor = 1.0;
+  } else if (ageInDays <= 90) {
+    // Slightly lower priority (1-3 months)
+    freshnessFactor = 0.95;
+  } else {
+    // Older content gets lower priority
+    freshnessFactor = 0.9;
+  }
+
+  // Calculate final priority
+  let priority = basePriority * freshnessFactor;
+
+  // Ensure priority stays within valid range (0.0 - 1.0)
+  priority = Math.max(0.1, Math.min(1.0, priority));
+
+  // Round to 1 decimal place
+  return Math.round(priority * 10) / 10;
+}
+
+/**
+ * Calculate dynamic change frequency based on content type and age
+ */
+function calculateChangeFreq(article, categorySlug = 'default') {
+  const now = new Date();
+  const publishedAt = new Date(article.published_at || article.created_at || now);
+  const ageInHours = (now - publishedAt) / (1000 * 60 * 60);
+  const ageInDays = ageInHours / 24;
+
+  // Get base frequency from category
+  let baseFreq = CHANGEFREQ_RULES[categorySlug] || CHANGEFREQ_RULES.default;
+
+  // Adjust frequency based on content age
+  if (ageInHours <= 6) {
+    // Very fresh content changes more frequently
+    return 'hourly';
+  } else if (ageInHours <= 24) {
+    // Fresh content (within 24 hours)
+    return 'daily';
+  } else if (ageInDays <= 7) {
+    // Recent content (within 1 week)
+    return baseFreq === 'monthly' ? 'weekly' : baseFreq;
+  } else if (ageInDays <= 30) {
+    // Normal frequency for content within 1 month
+    return baseFreq;
+  } else {
+    // Older content changes less frequently
+    if (baseFreq === 'hourly') return 'daily';
+    if (baseFreq === 'daily') return 'weekly';
+    if (baseFreq === 'weekly') return 'monthly';
+    return 'monthly';
+  }
+}
+
 const router = express.Router();
 
 // Debug endpoint to check database connectivity
@@ -55,9 +175,15 @@ async function safeQuery(sql, params = []) {
   }
 }
 
-function buildUrlsetXml(urls) {
+function buildUrlsetXml(urls, options = {}) {
   const parts = [];
   parts.push('<?xml version="1.0" encoding="UTF-8"?>');
+
+  // Add comment if provided
+  if (options.comment) {
+    parts.push(`<!-- ${options.comment} -->`);
+  }
+
   parts.push('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">');
   for (const u of urls) {
     parts.push('  <url>');
@@ -86,13 +212,36 @@ function buildSitemapIndexXml(sitemaps) {
 }
 
 async function generateStaticAndCategoryUrls(base, langs) {
-  const staticPaths = ['/', '/categories', '/about', '/contact', '/faq', '/privacy', '/terms', '/cookies'];
+  // Static pages with smart priority and changefreq
+  const staticPages = [
+    { path: '/', changefreq: 'hourly', priority: '1.0' }, // Homepage - highest priority, changes frequently
+    { path: '/categories', changefreq: 'daily', priority: '0.9' }, // Categories page - high priority
+    { path: '/about', changefreq: 'monthly', priority: '0.5' }, // About - static content
+    { path: '/contact', changefreq: 'monthly', priority: '0.6' }, // Contact - important but static
+    { path: '/faq', changefreq: 'monthly', priority: '0.4' }, // FAQ - helpful but static
+    { path: '/privacy', changefreq: 'yearly', priority: '0.3' }, // Legal pages - rarely change
+    { path: '/terms', changefreq: 'yearly', priority: '0.3' },
+    { path: '/cookies', changefreq: 'yearly', priority: '0.3' }
+  ];
+
   const urls = [];
 
   for (const l of langs) {
-    urls.push({ loc: `${base}/${l}`, changefreq: 'daily', priority: '1.0' });
-    for (const p of staticPaths.slice(1)) {
-      urls.push({ loc: `${base}/${l}${p}`, changefreq: 'weekly', priority: '0.6' });
+    // Homepage for each language
+    urls.push({
+      loc: `${base}/${l}`,
+      changefreq: 'hourly',
+      priority: '1.0',
+      lastmod: new Date() // Homepage always has fresh lastmod
+    });
+
+    // Other static pages
+    for (const page of staticPages.slice(1)) {
+      urls.push({
+        loc: `${base}/${l}${page.path}`,
+        changefreq: page.changefreq,
+        priority: page.priority
+      });
     }
   }
 
@@ -130,11 +279,16 @@ async function generateStaticAndCategoryUrls(base, langs) {
   for (const row of catRes.rows) {
     const l = row.language_code || 'en';
     if (!langs.includes(l)) continue;
+
+    // Calculate smart priority for category pages
+    const categoryPriority = CATEGORY_PRIORITY_WEIGHTS[row.slug] || CATEGORY_PRIORITY_WEIGHTS.default;
+    const adjustedPriority = Math.min(0.9, categoryPriority + 0.1); // Category pages get slight boost
+
     urls.push({
       loc: `${base}/${l}/category/${encodeURIComponent(row.slug)}`,
-      changefreq: 'daily',
-      lastmod: row.lastmod || undefined,
-      priority: '0.7',
+      changefreq: 'daily', // Categories change daily as new articles are added
+      lastmod: row.lastmod || new Date(),
+      priority: adjustedPriority.toFixed(1),
     });
   }
   return urls;
@@ -164,17 +318,21 @@ async function fetchArticlesSlice(base, langs, offset, limit) {
   for (const lang of langs) {
     const tableName = articlesTable(lang);
     const articleSql = tableName === 'articles'
-      ? `SELECT slug, language_code, COALESCE(published_at, created_at) AS lastmod
-         FROM ${tableName}
-         WHERE language_code = $1
-         ORDER BY COALESCE(published_at, created_at) DESC, id DESC`
-      : `SELECT slug, '${lang}' AS language_code, COALESCE(published_at, created_at) AS lastmod
-         FROM ${tableName}
-         ORDER BY COALESCE(published_at, created_at) DESC, id DESC`;
-    
+      ? `SELECT a.slug, a.language_code, COALESCE(a.published_at, a.created_at) AS lastmod,
+                c.slug AS category_slug, COALESCE(a.published_at, a.created_at) AS published_at
+         FROM ${tableName} a
+         LEFT JOIN categories c ON c.id = a.category_id
+         WHERE a.language_code = $1
+         ORDER BY COALESCE(a.published_at, a.created_at) DESC, a.id DESC`
+      : `SELECT a.slug, '${lang}' AS language_code, COALESCE(a.published_at, a.created_at) AS lastmod,
+                c.slug AS category_slug, COALESCE(a.published_at, a.created_at) AS published_at
+         FROM ${tableName} a
+         LEFT JOIN categories c ON c.id = a.category_id
+         ORDER BY COALESCE(a.published_at, a.created_at) DESC, a.id DESC`;
+
     const articleParams = tableName === 'articles' ? [lang] : [];
     const res = await safeQuery(articleSql, articleParams);
-    
+
     for (const row of res.rows) {
       allArticles.push(row);
     }
@@ -187,11 +345,16 @@ async function fetchArticlesSlice(base, langs, offset, limit) {
   const urls = [];
   for (const a of slicedArticles) {
     const l = a.language_code || 'en';
+
+    // Calculate smart priority and changefreq based on article age and category
+    const priority = calculateArticlePriority(a, a.category_slug);
+    const changefreq = calculateChangeFreq(a, a.category_slug);
+
     urls.push({
       loc: `${base}/${l}/article/${encodeURIComponent(a.slug)}`,
       lastmod: a.lastmod || undefined,
-      changefreq: 'monthly',
-      priority: '0.8',
+      changefreq: changefreq,
+      priority: priority.toString(),
     });
   }
   return urls;
@@ -202,13 +365,28 @@ async function fetchArticlesSlice(base, langs, offset, limit) {
  * ------------------------------------------------------------------ */
 
 async function generateStaticAndCategoryUrlsForLang(base, lang) {
-  const staticPaths = ['/', '/categories', '/about', '/contact', '/faq', '/privacy', '/terms', '/cookies'];
+  // Static pages with smart priority and changefreq
+  const staticPages = [
+    { path: '/', changefreq: 'hourly', priority: '1.0' }, // Homepage - highest priority, changes frequently
+    { path: '/categories', changefreq: 'daily', priority: '0.9' }, // Categories page - high priority
+    { path: '/about', changefreq: 'monthly', priority: '0.5' }, // About - static content
+    { path: '/contact', changefreq: 'monthly', priority: '0.6' }, // Contact - important but static
+    { path: '/faq', changefreq: 'monthly', priority: '0.4' }, // FAQ - helpful but static
+    { path: '/privacy', changefreq: 'yearly', priority: '0.3' }, // Legal pages - rarely change
+    { path: '/terms', changefreq: 'yearly', priority: '0.3' },
+    { path: '/cookies', changefreq: 'yearly', priority: '0.3' }
+  ];
+
   const urls = [];
 
-  // Static pages for this language
-  urls.push({ loc: `${base}/${lang}`, changefreq: 'daily', priority: '1.0' });
-  for (const p of staticPaths.slice(1)) {
-    urls.push({ loc: `${base}/${lang}${p}`, changefreq: 'weekly', priority: '0.6' });
+  // Static pages for this language with smart priorities
+  for (const page of staticPages) {
+    urls.push({
+      loc: `${base}/${lang}${page.path === '/' ? '' : page.path}`,
+      changefreq: page.changefreq,
+      priority: page.priority,
+      lastmod: page.path === '/' ? new Date() : undefined // Homepage always has fresh lastmod
+    });
   }
 
   // Categories that actually have articles in this language
@@ -233,11 +411,15 @@ async function generateStaticAndCategoryUrlsForLang(base, lang) {
   // Use safeQuery to ignore missing sharded tables
   const catRes = await safeQuery(catSql, catParams);
   for (const row of catRes.rows) {
+    // Calculate smart priority for category pages
+    const categoryPriority = CATEGORY_PRIORITY_WEIGHTS[row.slug] || CATEGORY_PRIORITY_WEIGHTS.default;
+    const adjustedPriority = Math.min(0.9, categoryPriority + 0.1); // Category pages get slight boost
+
     urls.push({
       loc: `${base}/${lang}/category/${encodeURIComponent(row.slug)}`,
-      changefreq: 'daily',
-      lastmod: row.lastmod || undefined,
-      priority: '0.7',
+      changefreq: 'daily', // Categories change daily as new articles are added
+      lastmod: row.lastmod || new Date(),
+      priority: adjustedPriority.toFixed(1),
     });
   }
   return urls;
@@ -245,28 +427,164 @@ async function generateStaticAndCategoryUrlsForLang(base, lang) {
 
 async function fetchAllArticleUrlsForLang(base, lang) {
   const tbl = articlesTable(lang);
-  // Similar to the category query above, include the language filter only
-  // when we are querying the shared `articles` table.
+  // Include category information for smart priority calculation
   const artSql = tbl === 'articles'
-    ? `SELECT slug, COALESCE(published_at, created_at) AS lastmod
-       FROM ${tbl}
-       WHERE language_code = $1
-       ORDER BY COALESCE(published_at, created_at) DESC, id DESC`
-    : `SELECT slug, COALESCE(published_at, created_at) AS lastmod
-       FROM ${tbl}
-       ORDER BY COALESCE(published_at, created_at) DESC, id DESC`;
+    ? `SELECT a.slug, COALESCE(a.published_at, a.created_at) AS lastmod,
+              c.slug AS category_slug, COALESCE(a.published_at, a.created_at) AS published_at
+       FROM ${tbl} a
+       LEFT JOIN categories c ON c.id = a.category_id
+       WHERE a.language_code = $1
+       ORDER BY COALESCE(a.published_at, a.created_at) DESC, a.id DESC`
+    : `SELECT a.slug, COALESCE(a.published_at, a.created_at) AS lastmod,
+              c.slug AS category_slug, COALESCE(a.published_at, a.created_at) AS published_at
+       FROM ${tbl} a
+       LEFT JOIN categories c ON c.id = a.category_id
+       ORDER BY COALESCE(a.published_at, a.created_at) DESC, a.id DESC`;
   const artParams = tbl === 'articles' ? [lang] : [];
   const res = await safeQuery(artSql, artParams);
   const urls = [];
   for (const a of res.rows) {
+    // Calculate smart priority and changefreq based on article age and category
+    const priority = calculateArticlePriority(a, a.category_slug);
+    const changefreq = calculateChangeFreq(a, a.category_slug);
+
     urls.push({
       loc: `${base}/${lang}/article/${encodeURIComponent(a.slug)}`,
       lastmod: a.lastmod || undefined,
-      changefreq: 'monthly',
-      priority: '0.8',
+      changefreq: changefreq,
+      priority: priority.toString(),
     });
   }
   return urls;
+}
+
+/**
+ * Generate Freshness Sitemap with only recently updated URLs
+ * Super hack: Small sitemaps with fresh content get crawled more aggressively
+ */
+async function generateFreshnessSitemap() {
+  const base = process.env.CANONICAL_BASE_URL || 'https://vivaverse.top';
+  const langs = Array.isArray(config.languages) && config.languages.length > 0 ? config.languages : ['en'];
+
+  // Freshness sitemap configuration
+  const FRESHNESS_CONFIG = {
+    maxUrls: 100,           // Keep it small for maximum crawl priority
+    maxAge: 7,              // Only include URLs updated in last 7 days
+    priorityBoost: 0.1      // Boost priority for fresh content
+  };
+
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - FRESHNESS_CONFIG.maxAge);
+  const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
+
+  const urls = [];
+
+  try {
+    // Get recently updated articles across all languages
+    for (const lang of langs) {
+      const tableName = articlesTable(lang);
+
+      const sql = tableName === 'articles'
+        ? `SELECT title, slug, summary, published_at, created_at, updated_at,
+                  c.name as category_name, c.slug as category_slug
+           FROM ${tableName} a
+           JOIN categories c ON c.id = a.category_id
+           WHERE a.language_code = $1
+           AND (a.updated_at >= $2 OR a.published_at >= $2 OR a.created_at >= $2)
+           ORDER BY COALESCE(a.updated_at, a.published_at, a.created_at) DESC
+           LIMIT $3`
+        : `SELECT title, slug, summary, published_at, created_at, updated_at,
+                  c.name as category_name, c.slug as category_slug
+           FROM ${tableName} a
+           JOIN categories c ON c.id = a.category_id
+           WHERE (a.updated_at >= $1 OR a.published_at >= $1 OR a.created_at >= $1)
+           ORDER BY COALESCE(a.updated_at, a.published_at, a.created_at) DESC
+           LIMIT $2`;
+
+      const params = tableName === 'articles'
+        ? [lang, cutoffDateStr, FRESHNESS_CONFIG.maxUrls]
+        : [cutoffDateStr, FRESHNESS_CONFIG.maxUrls];
+
+      const result = await query(sql, params);
+
+      for (const article of result.rows) {
+        const lastmod = article.updated_at || article.published_at || article.created_at;
+        const articleAge = (Date.now() - new Date(lastmod).getTime()) / (1000 * 60 * 60 * 24);
+
+        // Calculate priority based on freshness and category
+        let priority = calculateArticlePriority(article.category_slug, lastmod);
+
+        // Boost priority for very fresh content
+        if (articleAge < 1) {
+          priority = Math.min(1.0, priority + 0.2); // 24 hours boost
+        } else if (articleAge < 3) {
+          priority = Math.min(1.0, priority + 0.1); // 3 days boost
+        }
+
+        urls.push({
+          loc: `${base}/${lang}/article/${encodeURIComponent(article.slug)}`,
+          lastmod: new Date(lastmod).toISOString(),
+          changefreq: articleAge < 1 ? 'hourly' : articleAge < 3 ? 'daily' : 'weekly',
+          priority: priority.toFixed(1)
+        });
+      }
+    }
+
+    // Add recently updated category pages
+    const categoriesResult = await query(`
+      SELECT c.slug, c.name, c.updated_at, c.created_at,
+             MAX(COALESCE(a.updated_at, a.published_at, a.created_at)) as latest_article
+      FROM categories c
+      LEFT JOIN articles_en a ON a.category_id = c.id
+      WHERE c.updated_at >= $1 OR MAX(COALESCE(a.updated_at, a.published_at, a.created_at)) >= $1
+      GROUP BY c.id, c.slug, c.name, c.updated_at, c.created_at
+      ORDER BY GREATEST(c.updated_at, MAX(COALESCE(a.updated_at, a.published_at, a.created_at))) DESC
+      LIMIT 20
+    `, [cutoffDateStr]);
+
+    for (const category of categoriesResult.rows) {
+      for (const lang of langs) {
+        const lastmod = category.latest_article || category.updated_at || category.created_at;
+        const categoryAge = (Date.now() - new Date(lastmod).getTime()) / (1000 * 60 * 60 * 24);
+
+        let priority = calculateArticlePriority(category.slug, lastmod) + 0.1; // Category boost
+        priority = Math.min(1.0, priority);
+
+        urls.push({
+          loc: `${base}/${lang}/category/${encodeURIComponent(category.slug)}`,
+          lastmod: new Date(lastmod).toISOString(),
+          changefreq: categoryAge < 1 ? 'hourly' : 'daily',
+          priority: priority.toFixed(1)
+        });
+      }
+    }
+
+    // Sort by last modified date (newest first) and limit
+    urls.sort((a, b) => new Date(b.lastmod) - new Date(a.lastmod));
+    const limitedUrls = urls.slice(0, FRESHNESS_CONFIG.maxUrls);
+
+    // Generate XML
+    const xml = buildUrlsetXml(limitedUrls, {
+      comment: `Freshness Sitemap - ${limitedUrls.length} recently updated URLs (last ${FRESHNESS_CONFIG.maxAge} days)`
+    });
+
+    return xml;
+
+  } catch (error) {
+    console.error('Error generating freshness sitemap:', error);
+
+    // Fallback: return minimal sitemap with homepage
+    const fallbackUrls = langs.map(lang => ({
+      loc: `${base}/${lang}/`,
+      lastmod: new Date().toISOString(),
+      changefreq: 'daily',
+      priority: '1.0'
+    }));
+
+    return buildUrlsetXml(fallbackUrls, {
+      comment: 'Freshness Sitemap - Fallback (error occurred)'
+    });
+  }
 }
 
 router.get('/sitemap.xml', async (req, res) => {
@@ -350,19 +668,78 @@ router.get('/sitemaps/:file', async (req, res) => {
   }
 });
 
+/**
+ * Generate Freshness Sitemap (Super Hack)
+ * Small sitemap with only recently updated URLs for maximum crawl priority
+ * Crawlers LOVE small, recently updated sitemaps → faster crawling
+ */
+router.get('/sitemap-fresh.xml', async (req, res) => {
+  try {
+    const freshSitemap = await generateFreshnessSitemap();
+    res.setHeader('Content-Type', 'application/xml; charset=UTF-8');
+    res.setHeader('Cache-Control', 'public, max-age=1800'); // 30 minutes cache (more frequent updates)
+    res.setHeader('X-Sitemap-Type', 'freshness');
+    res.send(freshSitemap);
+  } catch (error) {
+    console.error('Error generating freshness sitemap:', error);
+    res.status(500).send('<?xml version="1.0" encoding="UTF-8"?><error>Failed to generate freshness sitemap</error>');
+  }
+});
+
 router.get('/robots.txt', async (req, res) => {
   const base = getBaseUrl(req);
-  res.setHeader('Content-Type', 'text/plain; charset=UTF-8');
-  res.send([
-    'User-agent: *',
-    'Allow: /',
-    '',
-    '# Disallow query-based search results',
-    'Disallow: /*/search',
-    'Disallow: /*?q=',
-    '',
-    `Sitemap: ${base}/sitemap.xml`,
-  ].join('\n'));
+
+  try {
+    // Get categories dynamically from database
+    const categoriesResult = await query('SELECT slug, name FROM categories ORDER BY slug');
+    const categories = categoriesResult.rows;
+
+    const robotsLines = [
+      'User-agent: *',
+      'Allow: /',
+      '',
+      '# Disallow query-based search results',
+      'Disallow: /*/search',
+      'Disallow: /*?q=',
+      '',
+      '# Sitemaps',
+      `Sitemap: ${base}/sitemap.xml`,
+      `Sitemap: ${base}/sitemap-fresh.xml`,
+      '',
+      '# HTML Sitemap (for enhanced crawling)',
+      `# HTML Sitemap: ${base}/sitemap`,
+      '',
+      '# RSS Feeds (for discovery)',
+      `# Main feed: ${base}/api/feeds/all.rss`,
+    ];
+
+    // Add dynamic category feeds
+    for (const category of categories) {
+      robotsLines.push(`# ${category.name}: ${base}/api/feeds/${category.slug}.rss`);
+    }
+
+    res.setHeader('Content-Type', 'text/plain; charset=UTF-8');
+    res.send(robotsLines.join('\n'));
+  } catch (error) {
+    console.error('Error generating robots.txt:', error);
+
+    // Fallback robots.txt
+    res.setHeader('Content-Type', 'text/plain; charset=UTF-8');
+    res.send([
+      'User-agent: *',
+      'Allow: /',
+      '',
+      '# Disallow query-based search results',
+      'Disallow: /*/search',
+      'Disallow: /*?q=',
+      '',
+      '# Sitemaps',
+      `Sitemap: ${base}/sitemap.xml`,
+      '',
+      '# RSS Feeds',
+      `# Main feed: ${base}/api/feeds/all.rss`,
+    ].join('\n'));
+  }
 });
 
 export default router;

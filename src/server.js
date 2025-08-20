@@ -22,6 +22,9 @@ import { updateTrendingScores } from './services/viewTracker.js';
 import { validateConfigurationOnStartup } from './services/configValidator.js';
 import { expressErrorHandler } from './services/errorHandler.js';
 import seoRoute from './routes/seo.js';
+import feedsRoute from './routes/feeds.js';
+import htmlSitemapRoute from './routes/htmlSitemap.js';
+import crawlOptimizationRoute from './routes/crawlOptimization.js';
 import { query } from './db.js';
 import { openapiSpecification } from './docs/swagger.js';
 
@@ -72,6 +75,9 @@ app.use('/generate', manualGenerateRoute);
 app.use('/generation', generationRoute);
 app.use('/analytics', analyticsRoute);
 app.use('/most-read', mostReadRoute);
+app.use('/api/feeds', feedsRoute);
+app.use('/crawl-optimization', crawlOptimizationRoute);
+app.use('/', htmlSitemapRoute);
 app.use('/', seoRoute);
 
 // OpenAPI/Swagger endpoints
