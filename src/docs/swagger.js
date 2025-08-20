@@ -123,6 +123,13 @@ const options = {
               example: 'de',
               description: 'Target language code (de, fr, es, pt, ar, hi)'
             },
+            maxChunks: {
+              type: 'integer',
+              minimum: 0,
+              maximum: 10,
+              example: 3,
+              description: 'Optional: Maximum number of chunks to split the article into for translation. If not specified, uses the configured default (TRANSLATION_DEFAULT_CHUNK_COUNT). Set to 0 for automatic chunking based on content length, or 1-10 for fixed chunk count. Useful for testing different chunking strategies to optimize translation quality and performance.'
+            },
           },
           required: ['slug', 'language'],
         },
