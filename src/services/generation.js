@@ -11,7 +11,7 @@ import { buildPrompt as buildTranslationPrompt } from '../prompts/translation.js
 // Import table routing helper
 import { articlesTable, LANG_SHARDED_ARTICLE_TABLES } from '../utils/articlesTable.js';
 import { translateChunk } from './translator.js';
-import HTMLTranslator from './htmlTranslator.js';
+import { HTMLTranslator } from './htmlTranslator.js';
 import { notifySearchEnginesNewArticle } from './seoNotificationService.js';
 
 // Debug logging for generation flow (enable with DEBUG_GENERATION=true)
