@@ -851,6 +851,122 @@ function buildArticleJsonLd({ masterJson, title, description, canonicalUrl, imag
   return [articleLd, faqLd].filter(Boolean);
 }
 
+/**
+ * Generate Open Graph and Twitter Card meta tags for articles
+ */
+function buildSocialMetaTags({ title, description, canonicalUrl, imageUrl, languageCode, siteName = 'VivaVerse' }) {
+  const metaTags = [];
+
+  // Open Graph tags
+  metaTags.push(`<meta property="og:type" content="article">`);
+  metaTags.push(`<meta property="og:title" content="${escapeHtml(title)}">`);
+  metaTags.push(`<meta property="og:description" content="${escapeHtml(description)}">`);
+  metaTags.push(`<meta property="og:site_name" content="${escapeHtml(siteName)}">`);
+  metaTags.push(`<meta property="og:locale" content="${getOgLocale(languageCode)}">`);
+
+  if (canonicalUrl) {
+    metaTags.push(`<meta property="og:url" content="${escapeHtml(canonicalUrl)}">`);
+  }
+
+  if (imageUrl) {
+    metaTags.push(`<meta property="og:image" content="${escapeHtml(imageUrl)}">`);
+    metaTags.push(`<meta property="og:image:alt" content="${escapeHtml(title)}">`);
+    metaTags.push(`<meta property="og:image:width" content="1200">`);
+    metaTags.push(`<meta property="og:image:height" content="630">`);
+  }
+
+  // Twitter Card tags
+  metaTags.push(`<meta name="twitter:card" content="summary_large_image">`);
+  metaTags.push(`<meta name="twitter:title" content="${escapeHtml(title)}">`);
+  metaTags.push(`<meta name="twitter:description" content="${escapeHtml(description)}">`);
+
+  if (imageUrl) {
+    metaTags.push(`<meta name="twitter:image" content="${escapeHtml(imageUrl)}">`);
+    metaTags.push(`<meta name="twitter:image:alt" content="${escapeHtml(title)}">`);
+  }
+
+  return metaTags.join('\n');
+}
+
+/**
+ * Convert language code to Open Graph locale format
+ */
+function getOgLocale(languageCode) {
+  const localeMap = {
+    'en': 'en_US',
+    'de': 'de_DE',
+    'fr': 'fr_FR',
+    'es': 'es_ES',
+    'pt': 'pt_BR',
+    'ar': 'ar_AR',
+    'hi': 'hi_IN'
+  };
+  return localeMap[languageCode] || 'en_US';
+}
+
+/**
+ * Escape HTML entities for meta tag content
+ */
+function escapeHtml(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Generate hreflang tags for multi-language content
+ */
+function buildHreflangTags({ baseSlug, availableLanguages, currentLanguage }) {
+  const baseUrl = config.seo?.canonicalBaseUrl || 'https://vivaverse.top';
+  const hreflangTags = [];
+
+  // Add hreflang for each available language
+  for (const lang of availableLanguages) {
+    const url = `${baseUrl}/${lang}/article/${baseSlug}`;
+    hreflangTags.push(`<link rel="alternate" hreflang="${lang}" href="${url}">`);
+  }
+
+  // Add x-default for English
+  const defaultUrl = `${baseUrl}/en/article/${baseSlug}`;
+  hreflangTags.push(`<link rel="alternate" hreflang="x-default" href="${defaultUrl}">`);
+
+  return hreflangTags.join('\n');
+}
+
+/**
+ * Generate complete meta tags for an article (standard + social + hreflang)
+ */
+function buildCompleteMetaTags({ title, description, canonicalUrl, imageUrl, languageCode, baseSlug, availableLanguages }) {
+  const metaTags = [];
+
+  // Standard meta tags
+  metaTags.push(`<meta charset="UTF-8">`);
+  metaTags.push(`<meta name="viewport" content="width=device-width, initial-scale=1.0">`);
+  metaTags.push(`<title>${escapeHtml(title)}</title>`);
+  metaTags.push(`<meta name="description" content="${escapeHtml(description)}">`);
+  metaTags.push(`<meta name="robots" content="index, follow">`);
+
+  if (canonicalUrl) {
+    metaTags.push(`<link rel="canonical" href="${escapeHtml(canonicalUrl)}">`);
+  }
+
+  // Social media meta tags
+  const socialTags = buildSocialMetaTags({ title, description, canonicalUrl, imageUrl, languageCode });
+  metaTags.push(socialTags);
+
+  // Hreflang tags for multi-language support
+  if (baseSlug && availableLanguages && availableLanguages.length > 1) {
+    const hreflangTags = buildHreflangTags({ baseSlug, availableLanguages, currentLanguage: languageCode });
+    metaTags.push(hreflangTags);
+  }
+
+  return metaTags.join('\n');
+}
+
 function appendJsonLd(html, ldArray) {
   if (!ldArray || !ldArray.length) return html;
   const payload = ldArray.length === 1 ? ldArray[0] : ldArray;
@@ -1024,14 +1140,18 @@ async function generateTranslationArticle({ lang, category, masterSlug, masterTi
 
   const readingTime = estimateReadingTimeMinutes(translatedContent);
 
+  // Ensure meta_title and canonical_url are properly set
+  const finalMetaTitle = translatedTitle || `${masterTitle} (${lang.toUpperCase()})`;
+  const finalCanonicalUrl = tCanonical || canonicalForSlug(tSlug, lang);
+
   let translationArticle = {
     title: translatedTitle,
     slug: tSlug,
     content: translatedContent,
     summary: translatedSummary,
-    meta_title: translatedTitle,
+    meta_title: finalMetaTitle,
     meta_description: translatedMetaDesc,
-    canonical_url: tCanonical,
+    canonical_url: finalCanonicalUrl,
     image_url: imageUrl,
     reading_time_minutes: readingTime,
     language_code: lang,

@@ -25,6 +25,7 @@ import seoRoute from './routes/seo.js';
 import feedsRoute from './routes/feeds.js';
 import htmlSitemapRoute from './routes/htmlSitemap.js';
 import crawlOptimizationRoute from './routes/crawlOptimization.js';
+import pagesRoute from './routes/pages.js';
 import { query } from './db.js';
 import { openapiSpecification } from './docs/swagger.js';
 
@@ -78,6 +79,7 @@ app.use('/most-read', mostReadRoute);
 app.use('/api/feeds', feedsRoute);
 app.use('/crawl-optimization', crawlOptimizationRoute);
 app.use('/', htmlSitemapRoute);
+app.use('/', pagesRoute);
 app.use('/', seoRoute);
 
 // OpenAPI/Swagger endpoints
