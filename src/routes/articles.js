@@ -4,6 +4,7 @@ import { config } from '../config.js';
 import { resolveLanguage } from '../utils/lang.js';
 import { articlesTable } from '../utils/articlesTable.js';
 import { autoTrackViews } from '../middleware/viewTracking.js';
+import { computeEtag, setCacheHeaders, handleConditionalGet } from '../utils/httpCache.js';
 
 const router = express.Router();
 
@@ -133,10 +134,8 @@ router.get('/latest', async (req, res) => {
     const hasNext = page < pages;
     const hasPrev = page > 1;
     
-    res.set('Vary', 'Accept-Language');
-    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
-    res.json({ 
-      data: result.rows, 
+    const payload = {
+      data: result.rows,
       language,
       pagination: {
         page,
@@ -147,7 +146,12 @@ router.get('/latest', async (req, res) => {
         hasNext,
         hasPrev
       }
-    });
+    };
+    const etag = computeEtag(payload, `latest|${language}|p:${page}|l:${limit}|o:${offset}`);
+    const lastModified = Date.now();
+    setCacheHeaders(res, { maxAge: 60, swr: 300, vary: ['Accept-Language'], etag, lastModified });
+    if (handleConditionalGet(req, res, { etag, lastModified })) return;
+    res.json(payload);
   } catch (err) {
     console.error('[articles/latest] Error:', err);
     res.status(500).json({ error: 'Failed to load latest articles' });
@@ -271,9 +275,12 @@ router.get('/slug/:slug', async (req, res) => {
       });
     }
     
-    res.set('Vary', 'Accept-Language');
-    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
-    res.json({ data: article, language });
+    const payload = { data: article, language };
+    const etag = computeEtag(payload, `article|${language}|slug:${rawSlug}`);
+    const lastModified = article.updated_at || article.published_at || Date.now();
+    setCacheHeaders(res, { maxAge: 300, swr: 600, vary: ['Accept-Language'], etag, lastModified });
+    if (handleConditionalGet(req, res, { etag, lastModified })) return;
+    res.json(payload);
   } catch (err) {
     res.status(500).json({ error: 'Failed to load article' });
   }
@@ -316,9 +323,12 @@ router.get('/:id/related', async (req, res) => {
 
     const relParams = baseTbl === 'articles' ? [category_id, language, id, slug] : [category_id, id, slug];
     const rel = await query(relQuerySql, relParams);
-    res.set('Vary', 'Accept-Language');
-    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
-    res.json({ data: rel.rows, language });
+    const payload = { data: rel.rows, language };
+    const etag = computeEtag(payload, `related|${language}|id:${id}`);
+    const lastModified = Date.now();
+    setCacheHeaders(res, { maxAge: 120, swr: 600, vary: ['Accept-Language'], etag, lastModified });
+    if (handleConditionalGet(req, res, { etag, lastModified })) return;
+    res.json(payload);
   } catch (err) {
     console.error('Error in related articles route:', err);
     res.status(500).json({ error: 'Failed to load related articles' });

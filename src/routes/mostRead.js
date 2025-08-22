@@ -3,6 +3,7 @@ import { query } from '../db.js';
 import { resolveLanguage } from '../utils/lang.js';
 import { config } from '../config.js';
 import { articlesTable } from '../utils/articlesTable.js';
+import { computeEtag, setCacheHeaders, handleConditionalGet } from '../utils/httpCache.js';
 
 const router = express.Router();
 
@@ -161,14 +162,17 @@ router.get('/', async (req, res) => {
     
     console.log(`[most-read] Found ${enrichedArticles.length} articles for language: ${language}`);
     
-    res.set('Vary', 'Accept-Language');
-    res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=600'); // 5 min cache
-    res.json({ 
-      data: enrichedArticles, 
+    const payload = {
+      data: enrichedArticles,
       language,
       period,
       total: enrichedArticles.length
-    });
+    };
+    const etag = computeEtag(payload, `most-read|${language}|limit:${limit}|period:${period}`);
+    const lastModified = Date.now();
+    setCacheHeaders(res, { maxAge: 300, swr: 600, vary: ['Accept-Language'], etag, lastModified });
+    if (handleConditionalGet(req, res, { etag, lastModified })) return;
+    res.json(payload);
     
   } catch (err) {
     console.error('[most-read] Error:', err);
@@ -263,14 +267,17 @@ router.get('/by-category', async (req, res) => {
       LIMIT $2
     `, [articlesPerCategory, maxCategories]);
     
-    res.set('Vary', 'Accept-Language');
-    res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
-    res.json({ 
-      data: result.rows, 
+    const payload = {
+      data: result.rows,
       language,
       articlesPerCategory,
       totalCategories: result.rows.length
-    });
+    };
+    const etag = computeEtag(payload, `most-read-by-category|${language}|limit:${articlesPerCategory}|max:${maxCategories}`);
+    const lastModified = Date.now();
+    setCacheHeaders(res, { maxAge: 300, swr: 600, vary: ['Accept-Language'], etag, lastModified });
+    if (handleConditionalGet(req, res, { etag, lastModified })) return;
+    res.json(payload);
     
   } catch (err) {
     console.error('[most-read] By category error:', err);

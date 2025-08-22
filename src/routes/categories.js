@@ -4,6 +4,7 @@ import { config } from '../config.js';
 import { resolveLanguage } from '../utils/lang.js';
 import { articlesTable } from '../utils/articlesTable.js';
 import { autoTrackViews } from '../middleware/viewTracking.js';
+import { computeEtag, setCacheHeaders, handleConditionalGet } from '../utils/httpCache.js';
 
 const router = express.Router();
 
@@ -64,9 +65,12 @@ router.get('/', async (req, res) => {
     );
     
     console.log(`[categories] Found ${result.rows.length} categories for language: ${language}`);
-    res.set('Vary', 'Accept-Language');
-    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
-    res.json({ data: result.rows, language });
+    const payload = { data: result.rows, language };
+    const etag = computeEtag(payload, `categories|${language}`);
+    const lastModified = Date.now();
+    setCacheHeaders(res, { maxAge: 60, swr: 300, vary: ['Accept-Language'], etag, lastModified });
+    if (handleConditionalGet(req, res, { etag, lastModified })) return;
+    res.json(payload);
   } catch (err) {
     console.error('[categories] Error:', err);
     res.status(500).json({ error: 'Failed to load categories' });
@@ -214,10 +218,8 @@ router.get('/:id/articles', async (req, res) => {
       }
     }
     
-    res.set('Vary', 'Accept-Language');
-    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
-    res.json({ 
-      data: result.rows, 
+    const payload = {
+      data: result.rows,
       language,
       pagination: {
         page,
@@ -228,7 +230,12 @@ router.get('/:id/articles', async (req, res) => {
         hasNext,
         hasPrev
       }
-    });
+    };
+    const etag = computeEtag(payload, `category:${id}|${language}|p:${page}|l:${limit}|o:${offset}`);
+    const lastModified = Date.now();
+    setCacheHeaders(res, { maxAge: 60, swr: 300, vary: ['Accept-Language'], etag, lastModified });
+    if (handleConditionalGet(req, res, { etag, lastModified })) return;
+    res.json(payload);
   } catch (err) {
     res.status(500).json({ error: 'Failed to load articles' });
   }
