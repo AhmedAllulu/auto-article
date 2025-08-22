@@ -1,6 +1,5 @@
 import express from 'express';
 import { query } from '../db.js';
-import { config } from '../config.js';
 import { articlesTable } from '../utils/articlesTable.js';
 
 const router = express.Router();
@@ -14,13 +13,13 @@ const router = express.Router();
 const HTML_SITEMAP_CONFIG = {
   // Number of articles per category to show
   articlesPerCategory: 20,
-  
+
   // Number of recent articles to show
   recentArticlesCount: 50,
-  
+
   // Cache duration (6 hours)
   cacheMaxAge: 21600,
-  
+
   // Site information
   siteInfo: {
     title: 'VivaVerse',
@@ -35,7 +34,7 @@ const HTML_SITEMAP_CONFIG = {
 function generateHtmlSitemap(data, language = 'en') {
   const { categories, recentArticles, staticPages, stats } = data;
   const baseUrl = HTML_SITEMAP_CONFIG.siteInfo.baseUrl;
-  
+
   const html = `<!DOCTYPE html>
 <html lang="${language}">
 <head>
@@ -45,7 +44,7 @@ function generateHtmlSitemap(data, language = 'en') {
     <meta name="description" content="${HTML_SITEMAP_CONFIG.siteInfo.description}">
     <meta name="robots" content="index, follow">
     <link rel="canonical" href="${baseUrl}/${language}/sitemap">
-    
+
     <!-- Structured Data for Sitemap -->
     <script type="application/ld+json">
     {
@@ -60,7 +59,7 @@ function generateHtmlSitemap(data, language = 'en') {
       }
     }
     </script>
-    
+
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -203,7 +202,7 @@ function generateHtmlSitemap(data, language = 'en') {
 <body>
     <div class="sitemap-container">
         <h1>📍 Site Map - ${HTML_SITEMAP_CONFIG.siteInfo.title}</h1>
-        
+
         <div class="stats">
             <div class="stat-item">
                 <span class="stat-number">${stats.totalArticles}</span>
@@ -298,11 +297,11 @@ function generateHtmlSitemap(data, language = 'en') {
  */
 async function fetchSitemapData(language = 'en') {
   const tableName = articlesTable(language);
-  
+
   try {
     // Get categories with article counts and sample articles
     const categoriesQuery = `
-      SELECT 
+      SELECT
         c.id, c.slug, c.name, c.description,
         COUNT(a.id) as article_count
       FROM categories c
@@ -312,10 +311,10 @@ async function fetchSitemapData(language = 'en') {
       HAVING COUNT(a.id) > 0
       ORDER BY COUNT(a.id) DESC, c.name
     `;
-    
+
     const categoriesParams = tableName === 'articles' ? [language] : [];
     const categoriesResult = await query(categoriesQuery, categoriesParams);
-    
+
     // Get sample articles for each category
     const categories = [];
     for (const category of categoriesResult.rows) {
@@ -330,19 +329,19 @@ async function fetchSitemapData(language = 'en') {
            WHERE category_id = $1
            ORDER BY COALESCE(published_at, created_at) DESC
            LIMIT $2`;
-      
-      const articlesParams = tableName === 'articles' 
+
+      const articlesParams = tableName === 'articles'
         ? [category.id, language, HTML_SITEMAP_CONFIG.articlesPerCategory]
         : [category.id, HTML_SITEMAP_CONFIG.articlesPerCategory];
-      
+
       const articlesResult = await query(articlesQuery, articlesParams);
-      
+
       categories.push({
         ...category,
         articles: articlesResult.rows
       });
     }
-    
+
     // Get recent articles across all categories
     const recentQuery = tableName === 'articles'
       ? `SELECT a.title, a.slug, a.summary, a.published_at, a.created_at, c.name as category_name
@@ -356,13 +355,13 @@ async function fetchSitemapData(language = 'en') {
          JOIN categories c ON c.id = a.category_id
          ORDER BY COALESCE(a.published_at, a.created_at) DESC
          LIMIT $1`;
-    
-    const recentParams = tableName === 'articles' 
+
+    const recentParams = tableName === 'articles'
       ? [language, HTML_SITEMAP_CONFIG.recentArticlesCount]
       : [HTML_SITEMAP_CONFIG.recentArticlesCount];
-    
+
     const recentResult = await query(recentQuery, recentParams);
-    
+
     // Static pages
     const staticPages = [
       { path: '/', title: 'Home', description: 'Latest articles and trending content' },
@@ -374,25 +373,25 @@ async function fetchSitemapData(language = 'en') {
       { path: '/terms', title: 'Terms of Service', description: 'Terms and conditions of use' },
       { path: '/cookies', title: 'Cookie Policy', description: 'How we use cookies' }
     ];
-    
+
     // Calculate stats
-    const totalArticles = recentResult.rows.length > 0 ? 
-      await query(`SELECT COUNT(*) as count FROM ${tableName} ${tableName === 'articles' ? 'WHERE language_code = $1' : ''}`, 
+    const totalArticles = recentResult.rows.length > 0 ?
+      await query(`SELECT COUNT(*) as count FROM ${tableName} ${tableName === 'articles' ? 'WHERE language_code = $1' : ''}`,
                    tableName === 'articles' ? [language] : []) : { rows: [{ count: 0 }] };
-    
+
     const stats = {
       totalArticles: parseInt(totalArticles.rows[0].count),
       totalCategories: categories.length,
       totalPages: staticPages.length
     };
-    
+
     return {
       categories,
       recentArticles: recentResult.rows,
       staticPages,
       stats
     };
-    
+
   } catch (error) {
     console.error('Error fetching sitemap data:', error);
 
@@ -420,20 +419,20 @@ async function fetchSitemapData(language = 'en') {
 router.get('/sitemap', async (req, res) => {
   try {
     const language = req.query.lang || 'en';
-    
+
     // Fetch sitemap data
     const sitemapData = await fetchSitemapData(language);
-    
+
     // Generate HTML
     const html = generateHtmlSitemap(sitemapData, language);
-    
+
     // Set headers
     res.setHeader('Content-Type', 'text/html; charset=UTF-8');
     res.setHeader('Cache-Control', `public, max-age=${HTML_SITEMAP_CONFIG.cacheMaxAge}`);
     res.setHeader('X-Robots-Tag', 'index, follow');
-    
+
     res.send(html);
-    
+
   } catch (error) {
     console.error('Error generating HTML sitemap:', error);
     res.status(500).send(`
@@ -449,5 +448,24 @@ router.get('/sitemap', async (req, res) => {
     `);
   }
 });
+
+// Pretty URL variant to match frontend route structure: /:language/sitemap
+router.get('/:language/sitemap', async (req, res) => {
+  try {
+    const { language } = req.params;
+    const sitemapData = await fetchSitemapData(language);
+    const html = generateHtmlSitemap(sitemapData, language);
+
+    res.setHeader('Content-Type', 'text/html; charset=UTF-8');
+    res.setHeader('Cache-Control', `public, max-age=${HTML_SITEMAP_CONFIG.cacheMaxAge}`);
+    res.setHeader('X-Robots-Tag', 'index, follow');
+
+    res.send(html);
+  } catch (error) {
+    console.error('Error generating HTML sitemap (pretty URL):', error);
+    res.status(500).send('Internal server error');
+  }
+});
+
 
 export default router;

@@ -770,4 +770,22 @@ router.get('/:key.txt', (req, res) => {
 });
 
 
+// Expose a safe endpoint to trigger sitemap update notifications post-deploy
+// Requires X-Admin-Token header to match process.env.SEO_ADMIN_TOKEN
+router.post('/notify/sitemaps', async (req, res) => {
+  try {
+    const token = (req.headers['x-admin-token'] || '').toString();
+    if (!token || token !== (process.env.SEO_ADMIN_TOKEN || '')) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const { notifySearchEnginesSitemapUpdate } = await import('../services/seoNotificationService.js');
+    const result = await notifySearchEnginesSitemapUpdate();
+    res.json({ ok: true, result });
+  } catch (err) {
+    console.error('Failed to notify sitemaps update:', err);
+    res.status(500).json({ ok: false, error: 'Failed to trigger notifications' });
+  }
+});
+
+
 export default router;
