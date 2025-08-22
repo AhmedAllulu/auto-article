@@ -445,6 +445,49 @@ function extractFromNaturalText(content, categoryName) {
   // Intentionally do not add a hard-coded FAQ fallback. If the AI didn't generate FAQs,
   // leave result.faq as an empty array so no FAQ section/LD is rendered.
 
+  // Post-process: conditionally drop the last FAQ if it appears to mirror external links
+  // Rule: If the last FAQ (q + a) shares >= 30% of its unique tokens with words derived
+  // from the external links (anchors, slugSuggestions, URL host/path words), remove it.
+  try {
+    if (Array.isArray(result.faq) && result.faq.length && Array.isArray(result.externalLinks) && result.externalLinks.length) {
+      const lastIdx = result.faq.length - 1;
+      const last = result.faq[lastIdx];
+      const text = `${last.q || ''} ${last.a || ''}`.toLowerCase();
+      const faqTokens = Array.from(new Set(text.split(/[^a-z0-9]+/i).filter(Boolean)));
+
+      const externalTextParts = [];
+      for (const link of result.externalLinks) {
+        if (link?.anchor) externalTextParts.push(String(link.anchor));
+        if (link?.slugSuggestion) externalTextParts.push(String(link.slugSuggestion).replace(/-/g, ' '));
+        if (link?.url) {
+          try {
+            const u = new URL(link.url);
+            externalTextParts.push(u.hostname.replace(/^www\./, '').replace(/\./g, ' '));
+            externalTextParts.push(decodeURIComponent(u.pathname).replace(/[-_/]/g, ' '));
+          } catch {}
+        }
+      }
+
+      const extText = externalTextParts.join(' ').toLowerCase();
+      const extTokens = Array.from(new Set(extText.split(/[^a-z0-9]+/i).filter(Boolean)));
+
+      if (faqTokens.length && extTokens.length) {
+        let overlap = 0;
+        const extSet = new Set(extTokens);
+        for (const t of faqTokens) {
+          if (extSet.has(t)) overlap++;
+        }
+        const ratio = overlap / faqTokens.length;
+        if (ratio >= 0.3) {
+          // Remove the last FAQ so it won't be used in HTML, JSON-LD, or stored content
+          result.faq.pop();
+        }
+      }
+    }
+  } catch (e) {
+    // Fail quietly; never block article generation on this heuristic
+  }
+
   return result;
 }
 

@@ -251,8 +251,8 @@ async function submitSitemapToGoogleSearchConsole(sitemapUrl) {
     // Fetch authorized sites and order candidates by availability and preference
     const sitesResp = await client.request({ url: 'https://www.googleapis.com/webmasters/v3/sites', method: 'GET' });
     const siteEntries = Array.isArray(sitesResp.data?.siteEntry) ? sitesResp.data.siteEntry : [];
-    const available = new Set(siteEntries.map(s => s.siteUrl));
-    genLog('GSC available properties', { count: siteEntries.length, sites: siteEntries.map(s => s.siteUrl) });
+    // Keep list for selection logic (used implicitly via orderedCandidates construction)
+    const available = new Set(siteEntries.map(s => s.siteUrl)); void available;
 
     // Preferred order: sc-domain first, then https URL-prefix variants, then http variants, then configuredSite
     const orderedCandidates = [];
@@ -546,12 +546,9 @@ async function submitToIndexNow(urls, retryCount = 0) {
 
         lastPingTimes.indexnow = now;
 
-        genLog('IndexNow submission successful', {
+        genLog('IndexNow success', {
           urlCount: validUrls.length,
-          status: response.status,
-          host: hostname,
-          endpoint,
-          retryCount
+          status: response.status
         });
 
         return {
@@ -563,10 +560,10 @@ async function submitToIndexNow(urls, retryCount = 0) {
         };
       } catch (error) {
         lastError = error;
-        genLog(`IndexNow endpoint ${endpoint} failed, trying next`, {
-          error: error.message,
+        genLog('IndexNow endpoint failed', {
+          endpoint,
           status: error.response?.status
-        });
+        }, 'debug');
         continue;
       }
     }
@@ -799,11 +796,9 @@ export async function notifySearchEnginesNewArticle(article) {
   const articleUrl = generateArticleUrl(article);
   const sitemapUrl = `${SEO_CONFIG.baseUrl}/sitemap-fresh.xml`;
 
-  genLog('Starting SEO notifications for new article', {
-    articleUrl,
+  genLog('SEO notify start', {
     slug: article.slug,
-    language: article.language_code,
-    title: article.title?.substring(0, 100)
+    lang: article.language_code
   });
 
   const results = {
@@ -903,13 +898,18 @@ export async function notifySearchEnginesNewArticle(article) {
   ];
 
   const successfulNotifications = modernNotifications
-    .filter(key => results.notifications[key] && results.notifications[key].success === true).length;
+    .filter(key => results.notifications[key]?.success === true).length;
 
-  genLog('SEO notifications completed', {
-    articleUrl,
-    successfulNotifications,
-    totalNotifications: modernNotifications.length,
-    results: results.notifications
+  const summary = modernNotifications.reduce((acc, key) => {
+    acc[key] = results.notifications[key]?.success === true;
+    return acc;
+  }, {});
+
+  genLog('SEO notify done', {
+    slug: article.slug,
+    success: successfulNotifications,
+    total: modernNotifications.length,
+    summary
   });
 
   return results;

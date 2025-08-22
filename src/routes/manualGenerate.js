@@ -307,4 +307,207 @@ router.post('/translate', async (req, res) => {
   }
 });
 
+
+/**
+ * @openapi
+ * /generate/translate-all:
+ *   post:
+ *     tags: [Generation]
+ *     summary: Translate an English article to all other supported languages in one request
+ *     description: |
+ *       Translates an existing English article to all supported languages except English.
+ *       Uses chunked translation to preserve HTML and improve reliability. Existing
+ *       translations are automatically skipped.
+ *
+ *       - Default target languages: config.languages minus "en"
+ *       - Optional: provide a subset via `languages`
+ *       - Chunking: control via `maxChunks` (0 = automatic, 1-10 explicit)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               slug:
+ *                 type: string
+ *                 description: English base article slug
+ *                 example: "how-to-build-a-pc"
+ *               languages:
+ *                 type: array
+ *                 description: Optional subset of target languages (defaults to all except en)
+ *                 items:
+ *                   type: string
+ *                   example: "de"
+ *               maxChunks:
+ *                 type: integer
+ *                 description: Number of chunks (1-10) or 0 for automatic chunking
+ *                 minimum: 0
+ *                 maximum: 10
+ *                 example: 0
+ *     responses:
+ *       '200':
+ *         description: Batch translation completed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     slug:
+ *                       type: string
+ *                     targets:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           language:
+ *                             type: string
+ *                           status:
+ *                             type: string
+ *                             enum: [created, skipped_exists, failed]
+ *                           article:
+ *                             type: object
+ *                           error:
+ *                             type: string
+ *                     summary:
+ *                       type: object
+ *                       properties:
+ *                         attempted:
+ *                           type: integer
+ *                         created:
+ *                           type: integer
+ *                         skipped:
+ *                           type: integer
+ *                         failed:
+ *                           type: integer
+ *       '400':
+ *         description: Invalid parameters
+ *       '404':
+ *         description: English article not found
+ */
+router.post('/translate-all', async (req, res) => {
+  try {
+    genLog('🚀 Batch translation started - BYPASSING TIME RESTRICTIONS', {
+      endpoint: 'POST /generate/translate-all',
+      trigger: 'manual_swagger',
+      bypassTiming: true,
+      currentTime: new Date().toISOString()
+    });
+
+    const { slug, languages, maxChunks } = req.body || {};
+    validateRequired({ slug }, ['slug'], 'batch translation request');
+
+    // Determine effective maxChunks
+    let effectiveMaxChunks = maxChunks;
+    if (effectiveMaxChunks === undefined) effectiveMaxChunks = config.translation.defaultChunkCount;
+    if (effectiveMaxChunks !== undefined && effectiveMaxChunks !== 0) {
+      if (!Number.isInteger(effectiveMaxChunks) || effectiveMaxChunks < 1 || effectiveMaxChunks > 10) {
+        throw new AppError(
+          'maxChunks must be an integer between 1 and 10, or 0 for automatic chunking',
+          ErrorTypes.VALIDATION_ERROR,
+          { maxChunks: effectiveMaxChunks }
+        );
+      }
+    }
+
+    // Fetch the base English article
+    const baseArticle = await withDatabaseErrorHandling(async () => {
+      const artRes = await query(
+        `SELECT a.*, c.id AS category_id, c.name AS category_name, c.slug AS category_slug
+         FROM articles_en a
+         LEFT JOIN categories c ON c.id = a.category_id
+         WHERE a.slug = $1 LIMIT 1`,
+        [slug]
+      );
+      if (artRes.rowCount === 0) {
+        throw new AppError('English article not found', ErrorTypes.RESOURCE_NOT_FOUND, { slug });
+      }
+      return artRes.rows[0];
+    }, 'base article lookup');
+
+    // Build target language list: supported minus en, optionally intersect with provided list
+    const supported = (config.languages || []).filter(l => l && l !== 'en');
+    let targets = supported;
+    if (Array.isArray(languages) && languages.length) {
+      const set = new Set(languages.map(String));
+      targets = supported.filter(l => set.has(l));
+    }
+
+    const category = { id: baseArticle.category_id, name: baseArticle.category_name, slug: baseArticle.category_slug };
+
+    const results = [];
+    let created = 0, skipped = 0, failed = 0;
+
+    // Process sequentially to limit load; switch to parallel if needed
+    for (const lang of targets) {
+      try {
+        // Skip if translation already exists
+        const transTbl = (await import('../utils/articlesTable.js')).articlesTable(lang);
+        const existsSql = transTbl === 'articles'
+          ? `SELECT 1 FROM ${transTbl} WHERE slug LIKE $1 || '-%' AND language_code = $2 LIMIT 1`
+          : `SELECT 1 FROM ${transTbl} WHERE slug LIKE $1 || '-%' LIMIT 1`;
+        const existsParams = transTbl === 'articles' ? [slug, lang] : [slug];
+        const existsRes = await query(existsSql, existsParams);
+        if (existsRes.rowCount > 0) {
+          results.push({ language: lang, status: 'skipped_exists' });
+          skipped += 1;
+          continue;
+        }
+
+        // Generate translation
+        const { generateTranslationArticle } = await import('../services/generation.js');
+        const { translationArticle } = await generateTranslationArticle({
+          lang,
+          category,
+          masterSlug: baseArticle.slug,
+          masterTitle: baseArticle.title,
+          masterSummary: baseArticle.summary,
+          imageUrl: baseArticle.image_url,
+          maxChunks: effectiveMaxChunks,
+        });
+
+        // Insert translation
+        await withDatabaseErrorHandling(async () => {
+          await withTransaction(async (client) => {
+            await insertArticle(client, translationArticle);
+            await updateDailyTokenUsage(client, [{
+              prompt_tokens: translationArticle.ai_tokens_input,
+              completion_tokens: translationArticle.ai_tokens_output,
+            }]);
+          });
+        }, `translation insertion ${lang}`);
+
+        results.push({ language: lang, status: 'created', article: translationArticle });
+        created += 1;
+      } catch (e) {
+        results.push({ language: lang, status: 'failed', error: e.message });
+        failed += 1;
+      }
+    }
+
+    res.json({
+      data: {
+        slug,
+        targets: results,
+        summary: { attempted: targets.length, created, skipped, failed }
+      }
+    });
+  } catch (err) {
+    if (err instanceof AppError) {
+      const statusCode = err.type === ErrorTypes.VALIDATION_ERROR ? 400 :
+                         err.type === ErrorTypes.RESOURCE_NOT_FOUND ? 404 : 500;
+      return res.status(statusCode).json({
+        error: err.message,
+        type: err.type,
+        context: err.context
+      });
+    }
+    console.error('batch translate generation failed', err);
+    res.status(500).json({ error: 'Batch translation generation failed', message: err.message });
+  }
+});
+
 export default router;
