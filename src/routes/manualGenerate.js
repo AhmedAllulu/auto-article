@@ -338,7 +338,8 @@ router.post('/translate', async (req, res) => {
  *                 description: Optional subset of target languages (defaults to all except en)
  *                 items:
  *                   type: string
- *                   example: "de"
+ *                   enum: ["de", "fr", "es", "pt", "ar", "hi"]
+ *                 example: ["de", "fr", "es", "pt", "ar", "hi"]
  *               maxChunks:
  *                 type: integer
  *                 description: Number of chunks (1-10) or 0 for automatic chunking
@@ -365,6 +366,7 @@ router.post('/translate', async (req, res) => {
  *                         properties:
  *                           language:
  *                             type: string
+ *                             enum: ["de", "fr", "es", "pt", "ar", "hi"]
  *                           status:
  *                             type: string
  *                             enum: [created, skipped_exists, failed]
