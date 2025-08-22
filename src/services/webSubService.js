@@ -13,8 +13,8 @@ const WEBSUB_CONFIG = {
   
   // Alternative hubs for redundancy
   alternativeHubs: [
-    'https://pubsubhubbub.superfeedr.com/',
-    'https://websub.rocks/hub'
+    'https://pubsubhubbub.superfeedr.com/'
+    // Removed 'https://websub.rocks/hub' - returns 405 errors
   ],
   
   // Enable/disable WebSub notifications

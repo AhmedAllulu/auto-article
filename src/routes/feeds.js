@@ -1,7 +1,7 @@
 import express from 'express';
 import { query } from '../db.js';
 import { config } from '../config.js';
-import { articlesTable } from '../utils/articlesTable.js';
+import { articlesTable, LANG_SHARDED_ARTICLE_TABLES } from '../utils/articlesTable.js';
 
 const router = express.Router();
 
@@ -101,6 +101,35 @@ function escapeXml(str) {
 }
 
 /**
+ * Clean content for RSS feeds - remove script tags and other problematic elements
+ */
+function cleanContentForRss(content) {
+  if (!content) return '';
+
+  // Remove script tags and their content
+  let cleaned = content.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+
+  // Remove style tags and their content
+  cleaned = cleaned.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+
+  // Remove other potentially problematic tags
+  cleaned = cleaned.replace(/<(iframe|object|embed|form|input|button|select|textarea)[^>]*>.*?<\/\1>/gi, '');
+
+  // Remove event handlers and javascript: links
+  cleaned = cleaned.replace(/\s*on\w+\s*=\s*["'][^"']*["']/gi, '');
+  cleaned = cleaned.replace(/href\s*=\s*["']javascript:[^"']*["']/gi, '');
+
+  // Fix unescaped ampersands that aren't part of valid entities
+  // This regex matches & that are not followed by valid entity patterns
+  cleaned = cleaned.replace(/&(?![a-zA-Z][a-zA-Z0-9]*;|#[0-9]+;|#x[0-9a-fA-F]+;)/g, '&amp;');
+
+  // Remove any remaining problematic characters that could break XML
+  cleaned = cleaned.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+
+  return cleaned;
+}
+
+/**
  * Format date for RSS (RFC 822 format)
  */
 function formatRssDate(date) {
@@ -110,11 +139,16 @@ function formatRssDate(date) {
 /**
  * Generate RSS XML for articles
  */
-function generateRssXml(feedInfo, articles, categorySlug = null) {
+function generateRssXml(feedInfo, articles, categorySlug = null, requestedLanguage = null) {
   const baseUrl = FEED_CONFIG.siteInfo.link;
-  const feedUrl = categorySlug 
+  let feedUrl = categorySlug
     ? `${baseUrl}/api/feeds/${categorySlug}.rss`
     : `${baseUrl}/api/feeds/all.rss`;
+
+  // Add language parameter if it was explicitly requested (to ensure self-reference matches request URL)
+  if (requestedLanguage) {
+    feedUrl += `?lang=${requestedLanguage}`;
+  }
   
   const xml = [];
   
@@ -179,7 +213,8 @@ function generateRssXml(feedInfo, articles, categorySlug = null) {
     
     // Content (full article content)
     if (article.content) {
-      xml.push(`<content:encoded><![CDATA[${article.content}]]></content:encoded>`);
+      const cleanContent = cleanContentForRss(article.content);
+      xml.push(`<content:encoded><![CDATA[${cleanContent}]]></content:encoded>`);
     }
     
     // Image/enclosure
@@ -202,7 +237,7 @@ function generateRssXml(feedInfo, articles, categorySlug = null) {
  */
 async function fetchCategoryArticles(categorySlug, language = 'en', limit = FEED_CONFIG.itemsPerFeed) {
   const tableName = articlesTable(language);
-  
+
   const sql = tableName === 'articles'
     ? `SELECT a.title, a.slug, a.summary, a.content, a.meta_description, a.image_url,
               a.language_code, a.published_at, a.created_at,
@@ -220,14 +255,34 @@ async function fetchCategoryArticles(categorySlug, language = 'en', limit = FEED
        WHERE c.slug = $1
        ORDER BY COALESCE(a.published_at, a.created_at) DESC
        LIMIT $2`;
-  
+
   const params = tableName === 'articles' ? [categorySlug, language, limit] : [categorySlug, limit];
-  
+
   try {
     const result = await query(sql, params);
     return result.rows;
   } catch (error) {
-    console.error(`Error fetching articles for category ${categorySlug}:`, error);
+    console.error(`Error fetching articles for category ${categorySlug} from table ${tableName}:`, error);
+
+    // If the table doesn't exist, try fallback to main articles table
+    if (error.code === '42P01' && tableName !== 'articles') {
+      try {
+        const fallbackSql = `SELECT a.title, a.slug, a.summary, a.content, a.meta_description, a.image_url,
+                                    a.language_code, a.published_at, a.created_at,
+                                    c.name as category_name, c.slug as category_slug
+                             FROM articles a
+                             JOIN categories c ON c.id = a.category_id
+                             WHERE c.slug = $1 AND a.language_code = $2
+                             ORDER BY COALESCE(a.published_at, a.created_at) DESC
+                             LIMIT $3`;
+        const fallbackResult = await query(fallbackSql, [categorySlug, language, limit]);
+        return fallbackResult.rows;
+      } catch (fallbackError) {
+        console.error(`Fallback query also failed:`, fallbackError);
+        return [];
+      }
+    }
+
     return [];
   }
 }
@@ -268,22 +323,58 @@ async function fetchAllArticles(language = 'en', limit = FEED_CONFIG.itemsPerFee
 
 /**
  * Get available categories for feed generation (with full data)
+ * Safely checks which article tables exist before referencing them to avoid 42P01 errors.
  */
 async function getAvailableCategories() {
   try {
-    const result = await query(`
-      SELECT c.id, c.slug, c.name, c.description,
-             COUNT(a.id) as article_count
+    // Candidate article tables: language-sharded + legacy 'articles'
+    const candidateTables = [
+      ...Array.from(LANG_SHARDED_ARTICLE_TABLES).map(code => `articles_${code}`),
+      'articles'
+    ];
+
+    // Discover which of the candidate tables actually exist
+    const existingTablesResult = await query(
+      `SELECT table_name
+       FROM information_schema.tables
+       WHERE table_schema = 'public'
+         AND table_name = ANY($1)`,
+      [candidateTables]
+    );
+    const existingTables = existingTablesResult.rows.map(r => r.table_name);
+
+    // If none exist yet, just return all categories (feeds will render empty until data arrives)
+    if (existingTables.length === 0) {
+      const fallbackResult = await query('SELECT id, slug, name FROM categories ORDER BY slug');
+      return fallbackResult.rows;
+    }
+
+    // Build a UNION of EXISTS subqueries only for the tables that exist
+    const unionSql = existingTables
+      .map(t => `SELECT 1 FROM ${t} a WHERE a.category_id = c.id`)
+      .join('\n        UNION ALL\n        ');
+
+    const sql = `
+      SELECT DISTINCT c.id, c.slug, c.name
       FROM categories c
-      LEFT JOIN articles_en a ON a.category_id = c.id
-      GROUP BY c.id, c.slug, c.name, c.description
-      HAVING COUNT(a.id) > 0
+      WHERE EXISTS (
+        ${unionSql}
+      )
       ORDER BY c.slug
-    `);
+    `;
+
+    const result = await query(sql);
     return result.rows;
   } catch (error) {
     console.error('Error fetching categories:', error);
-    return [];
+    // Fallback to all categories if there's an error
+    try {
+      const fallbackResult = await query('SELECT id, slug, name FROM categories ORDER BY slug');
+      return fallbackResult.rows;
+    } catch (fallbackError) {
+      console.error('Error fetching fallback categories:', fallbackError);
+      return [];
+    }
   }
 }
 
@@ -295,16 +386,17 @@ async function getAvailableCategories() {
 router.get('/all.rss', async (req, res) => {
   try {
     const language = req.query.lang || 'en';
+    const requestedLanguage = req.query.lang; // Only pass if explicitly requested
     const articles = await fetchAllArticles(language);
-    
+
     const feedInfo = {
       title: FEED_CONFIG.siteInfo.title,
       description: FEED_CONFIG.siteInfo.description,
       keywords: 'news, articles, insights, analysis, trends'
     };
-    
-    const rssXml = generateRssXml(feedInfo, articles);
-    
+
+    const rssXml = generateRssXml(feedInfo, articles, null, requestedLanguage);
+
     res.setHeader('Content-Type', 'application/rss+xml; charset=UTF-8');
     res.setHeader('Cache-Control', `public, max-age=${FEED_CONFIG.cacheMaxAge}`);
     res.send(rssXml);
@@ -321,10 +413,11 @@ router.get('/:category.rss', async (req, res) => {
   try {
     const categorySlug = req.params.category;
     const language = req.query.lang || 'en';
+    const requestedLanguage = req.query.lang; // Only pass if explicitly requested
 
     // Get category from database
     const categoryResult = await query(
-      'SELECT id, name, slug, description FROM categories WHERE slug = $1',
+      'SELECT id, name, slug FROM categories WHERE slug = $1',
       [categorySlug]
     );
 
@@ -340,14 +433,14 @@ router.get('/:category.rss', async (req, res) => {
 
     if (articles.length === 0) {
       // Return empty feed instead of 404
-      const rssXml = generateRssXml(feedInfo, [], categorySlug);
+      const rssXml = generateRssXml(feedInfo, [], categorySlug, requestedLanguage);
 
       res.setHeader('Content-Type', 'application/rss+xml; charset=UTF-8');
       res.setHeader('Cache-Control', `public, max-age=${FEED_CONFIG.cacheMaxAge}`);
       return res.send(rssXml);
     }
 
-    const rssXml = generateRssXml(feedInfo, articles, categorySlug);
+    const rssXml = generateRssXml(feedInfo, articles, categorySlug, requestedLanguage);
 
     res.setHeader('Content-Type', 'application/rss+xml; charset=UTF-8');
     res.setHeader('Cache-Control', `public, max-age=${FEED_CONFIG.cacheMaxAge}`);

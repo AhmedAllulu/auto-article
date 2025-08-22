@@ -434,7 +434,7 @@ function extractFromNaturalText(content, categoryName) {
 
   // Don't add fake external links - only use real ones found in AI content
 
-  // Ensure minimum content
+  // Ensure minimum content (do not auto-insert FAQ when AI provides none)
   if (result.sections.length === 0) {
     result.sections = [{
       heading: `Understanding ${categoryName}`,
@@ -442,14 +442,8 @@ function extractFromNaturalText(content, categoryName) {
     }];
   }
 
-  if (result.faq.length === 0) {
-    result.faq = [
-      {
-        q: `What are the benefits of ${categoryName}?`,
-        a: `${categoryName} offers numerous advantages including improved efficiency and better outcomes.`
-      }
-    ];
-  }
+  // Intentionally do not add a hard-coded FAQ fallback. If the AI didn't generate FAQs,
+  // leave result.faq as an empty array so no FAQ section/LD is rendered.
 
   return result;
 }
@@ -690,7 +684,7 @@ async function insertArticle(client, article) {
         slug: insertedArticle.slug,
         language: insertedArticle.language_code,
         error: error.message
-      });
+      }, false); // Don't stop generation for SEO notification failures
     });
   }
 

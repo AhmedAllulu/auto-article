@@ -40,6 +40,12 @@ const parseMapOfLists = (value, fallback = {}) => {
   return result;
 };
 
+const parseBool = (v, d = false) => {
+  if (v == null) return d;
+  const s = String(v).trim().toLowerCase();
+  return s === '1' || s === 'true' || s === 'yes' || s === 'y' || s === 'on';
+};
+
 export const config = {
   env: process.env.NODE_ENV || 'development',
   port: Number(process.env.PORT || 3322),
@@ -69,7 +75,7 @@ export const config = {
     defaultModel: process.env.AI_DEFAULT_TEXT_MODEL || 'gpt-5-nano',
     fallbackModel: process.env.AI_FALLBACK_MODEL || 'mistral-nemo',
     premiumModel: process.env.AI_PREMIUM_MODEL || 'gpt-5-nano',
-    enableWebSearch: String(process.env.ENABLE_WEB_SEARCH || 'false') === 'false',
+    enableWebSearch: parseBool(process.env.ENABLE_WEB_SEARCH, false),
     // Controls length and breadth when web search is enabled
     webSearchMaxWords: Number(process.env.AI_WEBSEARCH_MAX_WORDS || 1200),
     webSearchNumSites: Number(process.env.AI_WEBSEARCH_NUM_SITES || 2),
@@ -97,10 +103,10 @@ export const config = {
     defaultModel: process.env.OPENAI_DEFAULT_MODEL || 'gpt-5-nano',
   },
   generation: {
-    enabled: String(process.env.ENABLE_GENERATION) === 'true',
+    enabled: parseBool(process.env.ENABLE_GENERATION, true),
     maxCategoriesPerRun: Number(process.env.MAX_CATEGORIES_PER_RUN || 3), // limit categories per run
     articlesPerCategoryPerDay: Number(process.env.ARTICLES_PER_CATEGORY_PER_DAY || 2), // 2 articles per category daily
-    stopOnError: String(process.env.STOP_ON_ERROR || 'true') === 'true', // stop process on errors
+    stopOnError: parseBool(process.env.STOP_ON_ERROR, true), // stop process on errors
     logRetentionDays: Number(process.env.LOG_RETENTION_DAYS || 10), // log cleanup period
   },
   translation: {
@@ -116,6 +122,11 @@ export const config = {
   },
   seo: {
     canonicalBaseUrl: process.env.CANONICAL_BASE_URL || '',
+    // SEO notification settings
+    enableNotifications: parseBool(process.env.ENABLE_SEO_NOTIFICATIONS, true),
+    failSilently: parseBool(process.env.SEO_FAIL_SILENTLY, true),
+    // IndexNow API key for faster indexing
+    indexNowKey: process.env.INDEXNOW_API_KEY || '',
   },
   languages: parseList(
     process.env.SUPPORTED_LANGUAGES || 'en,de,fr,es,pt,ar,hi'

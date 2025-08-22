@@ -1,0 +1,83 @@
+{
+  "timestamp": "2025-08-21T17:11:59.452Z",
+  "overall": {
+    "success": 0,
+    "failed": 14,
+    "total": 18,
+    "successful": null
+  },
+  "services": {
+    "indexnow_key": {
+      "status": "healthy",
+      "url": "https://vivaverse.top/819d32c2-0821-4f76-af01-d5ce6086182a.txt"
+    },
+    "sitemap_notifications": {
+      "testName": "Sitemap Update",
+      "successful": 0,
+      "failed": 0,
+      "total": 0,
+      "successRate": 0,
+      "services": {},
+      "errors": []
+    }
+  },
+  "languages": {
+    "en": {
+      "testName": "English Article",
+      "successful": 2,
+      "failed": 4,
+      "total": 6,
+      "successRate": 33,
+      "services": {
+        "googleIndexingApi": "failed",
+        "bingWebmasterApi": "failed",
+        "yandexWebmasterApi": "failed",
+        "indexnow": "success",
+        "rss_feeds": "success",
+        "websub": "failed"
+      },
+      "errors": [
+        "websub: undefined"
+      ]
+    },
+    "de": {
+      "testName": "German Article",
+      "successful": 1,
+      "failed": 5,
+      "total": 6,
+      "successRate": 17,
+      "services": {
+        "googleIndexingApi": "failed",
+        "bingWebmasterApi": "failed",
+        "yandexWebmasterApi": "failed",
+        "indexnow": "failed",
+        "rss_feeds": "success",
+        "websub": "failed"
+      },
+      "errors": [
+        "indexnow: rate_limited",
+        "websub: undefined"
+      ]
+    },
+    "ar": {
+      "testName": "Arabic Article",
+      "successful": 1,
+      "failed": 5,
+      "total": 6,
+      "successRate": 17,
+      "services": {
+        "googleIndexingApi": "failed",
+        "bingWebmasterApi": "failed",
+        "yandexWebmasterApi": "failed",
+        "indexnow": "failed",
+        "rss_feeds": "success",
+        "websub": "failed"
+      },
+      "errors": [
+        "indexnow: rate_limited",
+        "websub: undefined"
+      ]
+    }
+  },
+  "errors": []
+}

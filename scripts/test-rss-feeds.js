@@ -335,7 +335,6 @@ async function testRssFeeds() {
   // Display recommendations
   console.log('\n💡 Recommendations for Google Search Console:');
   console.log('==============================================');
-  const availableFeeds = await getAvailableFeeds();
   Object.entries(availableFeeds).forEach(([key, feedInfo]) => {
     if (results.feeds[key]?.success) {
       console.log(`✅ Submit: ${feedInfo.url}`);

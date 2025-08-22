@@ -257,7 +257,7 @@ async function generateStaticAndCategoryUrls(base, langs) {
   // Query all language-specific tables to get category information
   const languages = ['en', 'de', 'fr', 'es', 'pt', 'ar', 'hi'];
   const allCategories = new Map();
-  
+
   for (const lang of languages) {
     const tableName = articlesTable(lang);
     const catSql = tableName === 'articles'
@@ -272,10 +272,10 @@ async function generateStaticAndCategoryUrls(base, langs) {
          FROM ${tableName} a
          JOIN categories c ON c.id = a.category_id
          GROUP BY c.slug`;
-    
+
     const catParams = tableName === 'articles' ? [lang] : [];
     const catRes = await safeQuery(catSql, catParams);
-    
+
     for (const row of catRes.rows) {
       const key = `${row.slug}-${row.language_code}`;
       if (!allCategories.has(key) || (row.lastmod && (!allCategories.get(key).lastmod || row.lastmod > allCategories.get(key).lastmod))) {
@@ -283,7 +283,7 @@ async function generateStaticAndCategoryUrls(base, langs) {
       }
     }
   }
-  
+
   const catRes = { rows: Array.from(allCategories.values()) };
   for (const row of catRes.rows) {
     const l = row.language_code || 'en';
@@ -305,25 +305,25 @@ async function generateStaticAndCategoryUrls(base, langs) {
 
 async function countArticles(langs) {
   let totalCount = 0;
-  
+
   for (const lang of langs) {
     const tableName = articlesTable(lang);
     const countSql = tableName === 'articles'
       ? `SELECT COUNT(*)::bigint AS count FROM ${tableName} WHERE language_code = $1`
       : `SELECT COUNT(*)::bigint AS count FROM ${tableName}`;
-    
+
     const countParams = tableName === 'articles' ? [lang] : [];
     const { rows } = await safeQuery(countSql, countParams);
     totalCount += Number(rows[0]?.count || 0);
   }
-  
+
   return totalCount;
 }
 
 async function fetchArticlesSlice(base, langs, offset, limit) {
   // Collect articles from all language-specific tables
   const allArticles = [];
-  
+
   for (const lang of langs) {
     const tableName = articlesTable(lang);
     const articleSql = tableName === 'articles'
@@ -346,11 +346,11 @@ async function fetchArticlesSlice(base, langs, offset, limit) {
       allArticles.push(row);
     }
   }
-  
+
   // Sort all articles by date and apply offset/limit
   allArticles.sort((a, b) => new Date(b.lastmod || 0) - new Date(a.lastmod || 0));
   const slicedArticles = allArticles.slice(offset, offset + limit);
-  
+
   const urls = [];
   for (const a of slicedArticles) {
     const l = a.language_code || 'en';
@@ -596,7 +596,8 @@ async function generateFreshnessSitemap() {
   }
 }
 
-router.get('/sitemap.xml', async (req, res) => {
+// Serve sitemap index on both /sitemap.xml and /api/sitemap.xml for compatibility
+router.get(['/sitemap.xml', '/api/sitemap.xml'], async (req, res) => {
   try {
     const base = getBaseUrl(req);
     const langs = Array.isArray(config.languages) && config.languages.length > 0 ? config.languages : ['en'];
@@ -621,7 +622,7 @@ router.get('/sitemaps/:file', async (req, res) => {
     const file = String(req.params.file || '');
     const base = getBaseUrl(req);
     const allLangs = Array.isArray(config.languages) && config.languages.length > 0 ? config.languages : ['en'];
-    
+
     // Debug: Log the request
     console.log(`Sitemap request: ${file}, base: ${base}, langs: ${allLangs}`);
 
@@ -752,5 +753,21 @@ router.get('/robots.txt', async (req, res) => {
     ].join('\n'));
   }
 });
+
+// Serve IndexNow verification key file at /{INDEXNOW_API_KEY}.txt
+router.get('/:key.txt', (req, res) => {
+  const requested = req.params.key;
+  const configured = process.env.INDEXNOW_API_KEY || '';
+  if (!configured) {
+    return res.status(404).type('text/plain').send('Not Found');
+  }
+  // Only serve when the requested key matches the configured key
+  if (requested === configured) {
+    res.setHeader('Content-Type', 'text/plain; charset=UTF-8');
+    return res.send(configured);
+  }
+  return res.status(404).type('text/plain').send('Not Found');
+});
+
 
 export default router;
