@@ -797,7 +797,7 @@ export async function notifySearchEnginesNewArticle(article) {
   }
 
   const articleUrl = generateArticleUrl(article);
-  const sitemapUrl = `${SEO_CONFIG.baseUrl}/api/sitemap.xml`;
+  const sitemapUrl = `${SEO_CONFIG.baseUrl}/sitemap-fresh.xml`;
 
   genLog('Starting SEO notifications for new article', {
     articleUrl,
@@ -919,7 +919,7 @@ export async function notifySearchEnginesNewArticle(article) {
  * Notify search engines about sitemap updates (for bulk operations)
  */
 export async function notifySearchEnginesSitemapUpdate() {
-  const sitemapUrl = `${SEO_CONFIG.baseUrl}/api/sitemap.xml`;
+  const sitemapUrl = `${SEO_CONFIG.baseUrl}/sitemap-fresh.xml`;
 
   genLog('Starting sitemap update notifications (2025 best practice)', { sitemapUrl });
 
@@ -991,7 +991,7 @@ export async function notifySearchEnginesBatch(articles) {
   }
 
   const urls = articles.map(generateArticleUrl);
-  const sitemapUrl = `${SEO_CONFIG.baseUrl}/api/sitemap.xml`;
+  const sitemapUrl = `${SEO_CONFIG.baseUrl}/sitemap-fresh.xml`;
 
   genLog('Starting batch SEO notifications (2025 best practice)', {
     articleCount: articles.length,

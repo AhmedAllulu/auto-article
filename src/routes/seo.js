@@ -184,6 +184,21 @@ async function safeQuery(sql, params = []) {
   }
 }
 
+/**
+ * Get the most recent content timestamp for a given language.
+ * Returns null if no articles exist (or the table is missing).
+ */
+async function getLatestContentTimestampForLang(lang) {
+  const tbl = articlesTable(lang);
+  const sql = tbl === 'articles'
+    ? `SELECT MAX(COALESCE(updated_at, published_at, created_at)) AS lastmod FROM ${tbl} WHERE language_code = $1`
+    : `SELECT MAX(COALESCE(updated_at, published_at, created_at)) AS lastmod FROM ${tbl}`;
+  const params = tbl === 'articles' ? [lang] : [];
+  const res = await safeQuery(sql, params);
+  return res.rows?.[0]?.lastmod || null;
+}
+
+
 function buildUrlsetXml(urls, options = {}) {
   const parts = [];
   parts.push('<?xml version="1.0" encoding="UTF-8"?>');
@@ -477,8 +492,8 @@ async function generateFreshnessSitemap() {
 
   // Freshness sitemap configuration
   const FRESHNESS_CONFIG = {
-    maxUrls: 100,           // Keep it small for maximum crawl priority
-    maxAge: 7,              // Only include URLs updated in last 7 days
+    maxUrls: Number(process.env.FRESH_SITEMAP_MAX_URLS || 10), // Keep it very small for max crawl priority
+    maxAge: Number(process.env.FRESH_SITEMAP_MAX_AGE_DAYS || 3), // Only include URLs updated in last N days
     priorityBoost: 0.1      // Boost priority for fresh content
   };
 
@@ -494,16 +509,16 @@ async function generateFreshnessSitemap() {
       const tableName = articlesTable(lang);
 
       const sql = tableName === 'articles'
-        ? `SELECT title, slug, summary, published_at, created_at, updated_at,
-                  c.name as category_name, c.slug as category_slug
+        ? `SELECT a.title, a.slug, a.summary, a.published_at, a.created_at, a.updated_at,
+                  c.name AS category_name, c.slug AS category_slug
            FROM ${tableName} a
            JOIN categories c ON c.id = a.category_id
            WHERE a.language_code = $1
            AND (a.updated_at >= $2 OR a.published_at >= $2 OR a.created_at >= $2)
            ORDER BY COALESCE(a.updated_at, a.published_at, a.created_at) DESC
            LIMIT $3`
-        : `SELECT title, slug, summary, published_at, created_at, updated_at,
-                  c.name as category_name, c.slug as category_slug
+        : `SELECT a.title, a.slug, a.summary, a.published_at, a.created_at, a.updated_at,
+                  c.name AS category_name, c.slug AS category_slug
            FROM ${tableName} a
            JOIN categories c ON c.id = a.category_id
            WHERE (a.updated_at >= $1 OR a.published_at >= $1 OR a.created_at >= $1)
@@ -514,14 +529,14 @@ async function generateFreshnessSitemap() {
         ? [lang, cutoffDateStr, FRESHNESS_CONFIG.maxUrls]
         : [cutoffDateStr, FRESHNESS_CONFIG.maxUrls];
 
-      const result = await query(sql, params);
+      const result = await safeQuery(sql, params);
 
       for (const article of result.rows) {
         const lastmod = article.updated_at || article.published_at || article.created_at;
         const articleAge = (Date.now() - new Date(lastmod).getTime()) / (1000 * 60 * 60 * 24);
 
         // Calculate priority based on freshness and category
-        let priority = calculateArticlePriority(article.category_slug, lastmod);
+        let priority = calculateArticlePriority(article, article.category_slug);
 
         // Boost priority for very fresh content
         if (articleAge < 1) {
@@ -539,34 +554,7 @@ async function generateFreshnessSitemap() {
       }
     }
 
-    // Add recently updated category pages
-    const categoriesResult = await query(`
-      SELECT c.slug, c.name, c.updated_at, c.created_at,
-             MAX(COALESCE(a.updated_at, a.published_at, a.created_at)) as latest_article
-      FROM categories c
-      LEFT JOIN articles_en a ON a.category_id = c.id
-      WHERE c.updated_at >= $1 OR MAX(COALESCE(a.updated_at, a.published_at, a.created_at)) >= $1
-      GROUP BY c.id, c.slug, c.name, c.updated_at, c.created_at
-      ORDER BY GREATEST(c.updated_at, MAX(COALESCE(a.updated_at, a.published_at, a.created_at))) DESC
-      LIMIT 20
-    `, [cutoffDateStr]);
-
-    for (const category of categoriesResult.rows) {
-      for (const lang of langs) {
-        const lastmod = category.latest_article || category.updated_at || category.created_at;
-        const categoryAge = (Date.now() - new Date(lastmod).getTime()) / (1000 * 60 * 60 * 24);
-
-        let priority = calculateArticlePriority(category.slug, lastmod) + 0.1; // Category boost
-        priority = Math.min(1.0, priority);
-
-        urls.push({
-          loc: `${base}/${lang}/category/${encodeURIComponent(category.slug)}`,
-          lastmod: new Date(lastmod).toISOString(),
-          changefreq: categoryAge < 1 ? 'hourly' : 'daily',
-          priority: priority.toFixed(1)
-        });
-      }
-    }
+    // Only include latest articles in freshness sitemap (no category pages) per requirement
 
     // Sort by last modified date (newest first) and limit
     urls.sort((a, b) => new Date(b.lastmod) - new Date(a.lastmod));
@@ -577,7 +565,9 @@ async function generateFreshnessSitemap() {
       comment: `Freshness Sitemap - ${limitedUrls.length} recently updated URLs (last ${FRESHNESS_CONFIG.maxAge} days)`
     });
 
-    return xml;
+    const newest = limitedUrls.length > 0 ? limitedUrls[0].lastmod : null;
+    return { xml, newestLastmod: newest };
+
 
   } catch (error) {
     console.error('Error generating freshness sitemap:', error);
@@ -590,9 +580,10 @@ async function generateFreshnessSitemap() {
       priority: '1.0'
     }));
 
-    return buildUrlsetXml(fallbackUrls, {
+    const xml = buildUrlsetXml(fallbackUrls, {
       comment: 'Freshness Sitemap - Fallback (error occurred)'
     });
+    return { xml, newestLastmod: fallbackUrls[0]?.lastmod || null };
   }
 }
 
@@ -603,13 +594,21 @@ router.get(['/sitemap.xml', '/api/sitemap.xml'], async (req, res) => {
     const langs = Array.isArray(config.languages) && config.languages.length > 0 ? config.languages : ['en'];
 
     const sitemaps = [];
+    let latestOverall = null;
     for (const lang of langs) {
-      sitemaps.push({ loc: `${base}/sitemaps/${lang}.xml`, lastmod: new Date() });
+      const lastmod = await getLatestContentTimestampForLang(lang);
+      if (lastmod && (!latestOverall || new Date(lastmod) > new Date(latestOverall))) {
+        latestOverall = lastmod;
+      }
+      sitemaps.push({ loc: `${base}/sitemaps/${lang}.xml`, lastmod });
     }
 
     const indexXml = buildSitemapIndexXml(sitemaps);
     res.setHeader('Content-Type', 'application/xml; charset=UTF-8');
     res.setHeader('Cache-Control', 'public, max-age=3600');
+    if (latestOverall) {
+      res.setHeader('Last-Modified', new Date(latestOverall).toUTCString());
+    }
     res.send(indexXml);
   } catch (err) {
     console.error('Sitemap index generation error:', err);
@@ -686,12 +685,13 @@ router.get('/sitemaps/:file', async (req, res) => {
 router.get('/sitemap-fresh.xml', async (req, res) => {
   try {
     console.log('Generating freshness sitemap...');
-    const freshSitemap = await generateFreshnessSitemap();
+    const { xml, newestLastmod } = await generateFreshnessSitemap();
     res.setHeader('Content-Type', 'application/xml; charset=UTF-8');
-    res.setHeader('Cache-Control', 'public, max-age=1800'); // 30 minutes cache (more frequent updates)
+    res.setHeader('Cache-Control', 'public, max-age=600'); // 10 minutes cache for rapid updates
     res.setHeader('X-Sitemap-Type', 'freshness');
+    if (newestLastmod) res.setHeader('Last-Modified', new Date(newestLastmod).toUTCString());
     console.log('Freshness sitemap generated successfully');
-    res.send(freshSitemap);
+    res.send(xml);
   } catch (error) {
     console.error('Error generating freshness sitemap:', error);
     res.status(500).send('<?xml version="1.0" encoding="UTF-8"?><error>Failed to generate freshness sitemap</error>');
