@@ -89,7 +89,7 @@ const bestOfTemplates = [
   },
   {
     system: `You are an expert curator who creates comparison round-ups for tech shoppers.`,
-    user: `Produce a listicle highlighting the "6 Best Laptops for College Students in 2025." Use an engaging title like "The Definitive List of Campus-Ready Laptops." Provide key features (battery life, weight), pricing insights, and a clear verdict for different majors (e.g., engineering vs. liberal arts).${COMMON_STRUCTURE}`,
+    user: `Produce a listicle highlighting the "6 Best Laptops for College Students in 2025." Use an engaging title like "The Definitive List of Campus-Ready Laptops." Provide key features (battery life, weight), pricing insights, and a clear verdict for different majors.${COMMON_STRUCTURE}`,
   },
   {
     system: `You are a consumer advocate who helps people make informed purchasing decisions on smart home devices.`,
@@ -113,7 +113,7 @@ const bestOfTemplates = [
   },
   {
     system: `You are a quality assessor for PC components.`,
-    user: `Produce a comparison of the "Top 5 Highest-Rated Power Supply Units (PSUs) for a New PC Build." Use a title like "Cream of the Crop: The Most Reliable PSUs." Feature methodology on how efficiency ratings (e.g., 80+ Gold) impact performance and electricity costs.${COMMON_STRUCTURE}`,
+    user: `Produce a comparison of the "Top 5 Highest-Rated Power Supply Units (PSUs) for a New PC Build." Use a title like "Cream of the Crop: The Most Reliable PSUs." Feature methodology on how efficiency ratings impact performance and electricity costs.${COMMON_STRUCTURE}`,
   },
   // Software & Services
   {

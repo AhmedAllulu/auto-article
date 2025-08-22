@@ -161,7 +161,7 @@ const marketingSalesTemplates = [
   },
   {
     system: `You are a PPC (Pay-Per-Click) advertising specialist.`,
-    user: `Write a comprehensive guide on setting up a Google Ads retargeting campaign for an e-commerce store. Cover audience creation (e.g., cart abandoners), ad creation, and budget setting to bring back potential customers.${COMMON_STRUCTURE}`,
+    user: `Write a comprehensive guide on setting up a Google Ads retargeting campaign for an e-commerce store. Cover audience creation, ad creation, and budget setting to bring back potential customers.${COMMON_STRUCTURE}`,
   },
   {
     system: `You are a customer success and retention expert for SaaS businesses.`,

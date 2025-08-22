@@ -13,19 +13,19 @@ import { COMMON_STRUCTURE } from './common_structure.js';
 const newPetTemplates = [
   {
     system: `You are a compassionate and experienced veterinarian or shelter worker who provides clear, reassuring advice for new pet owners.`,
-    user: `Write a complete "First-Timer's Guide" to adopting ONE specific type of pet (e.g., "what to expect when you adopt a rescue dog," "a beginner's guide to caring for a new kitten," or "everything you need to know before getting a hamster"). Cover essential supplies, the first 48 hours, and initial vet care.${COMMON_STRUCTURE}`,
+    user: `Write a complete "First-Timer's Guide" to adopting ONE specific type of pet. Cover essential supplies, the first 48 hours, and initial vet care.${COMMON_STRUCTURE}`,
   },
   {
     system: `You are a pet care expert who helps owners provide the best possible daily care.`,
-    user: `Create a detailed guide on ONE specific, fundamental aspect of pet care (e.g., "how to choose the right food for your dog," "a guide to creating the perfect litter box setup for your cat," or "how to properly groom a long-haired dog at home"). Explain the 'why' behind the advice.${COMMON_STRUCTURE}`,
+    user: `Create a detailed guide on ONE specific, fundamental aspect of pet care. Explain the 'why' behind the advice.${COMMON_STRUCTURE}`,
   },
   {
     system: `You are a "pet-proofing" specialist who helps create safe home environments.`,
-    user: `Write a checklist-style article on how to pet-proof your home for ONE specific type of animal (e.g., "a room-by-room guide to puppy-proofing your house," "common household plants that are toxic to cats," or "how to create a safe and enriching environment for a pet rabbit").${COMMON_STRUCTURE}`,
+    user: `Write a checklist-style article on how to pet-proof your home for ONE specific type of animal.${COMMON_STRUCTURE}`,
   },
   {
     system: `You are a pet name guru who loves finding the perfect name.`,
-    user: `Create a fun listicle of 50+ unique and creative names for ONE specific type of pet, grouped by theme (e.g., "50 unique names for male dogs," "creative cat names inspired by mythology," or "cute names for a pair of guinea pigs").${COMMON_STRUCTURE}`,
+    user: `Create a fun listicle of 50+ unique and creative names for ONE specific type of pet, grouped by theme.${COMMON_STRUCTURE}`,
   },
 ];
 
@@ -34,19 +34,19 @@ const newPetTemplates = [
 const behaviorTemplates = [
   {
     system: `You are a certified positive reinforcement dog trainer who breaks down training into simple, fun, and effective steps.`,
-    user: `Write a step-by-step training guide on how to teach a dog ONE specific, essential command or solve a common behavior problem (e.g., "how to teach your dog to 'stay' in 5 simple steps," "a guide to crate training a puppy," or "how to stop a dog from jumping on guests"). Focus on positive, reward-based methods.${COMMON_STRUCTURE}`,
+    user: `Write a step-by-step training guide on how to teach a dog ONE specific, essential command or solve a common behavior problem. Focus on positive, reward-based methods.${COMMON_STRUCTURE}`,
   },
   {
     system: `You are a cat behaviorist who helps owners understand the mysterious world of felines.`,
-    user: `Create a detailed explainer on ONE specific, often misunderstood cat behavior (e.g., "why do cats knead? The science behind 'making biscuits'," "a guide to cat body language: what is your cat telling you?," or "how to stop your cat from scratching the furniture"). Provide practical solutions based on understanding the cat's instincts.${COMMON_STRUCTURE}`,
+    user: `Create a detailed explainer on ONE specific, often misunderstood cat behavior. Provide practical solutions based on understanding the cat's instincts.${COMMON_STRUCTURE}`,
   },
   {
     system: `You are an animal enrichment specialist who believes in keeping pets mentally stimulated.`,
-    user: `Write an article with 5-7 creative and budget-friendly enrichment ideas for ONE specific type of pet (e.g., "7 DIY puzzle toys to keep your dog entertained," "how to create a stimulating indoor environment for your cat," or "enrichment ideas for a hamster's cage").${COMMON_STRUCTURE}`,
+    user: `Write an article with 5-7 creative and budget-friendly enrichment ideas for ONE specific type of pet.${COMMON_STRUCTURE}`,
   },
   {
     system: `You are a pet socialization expert.`,
-    user: `Develop a guide on how to properly socialize ONE specific type of pet (e.g., "a guide to safe and successful puppy socialization," "how to properly introduce a new cat to your resident cat," or "introducing your dog to a new baby").${COMMON_STRUCTURE}`,
+    user: `Develop a guide on how to properly socialize ONE specific type of pet.${COMMON_STRUCTURE}`,
   },
 ];
 
@@ -55,15 +55,15 @@ const behaviorTemplates = [
 const healthTemplates = [
   {
     system: `You are a veterinarian who provides clear, evidence-based health advice for pet owners.`,
-    user: `Write a helpful guide to the signs and symptoms of ONE specific, common pet health issue (e.g., "7 signs your dog might have allergies," "a guide to dental health in cats," or "how to tell if your pet is overweight and what to do about it"). Always include a strong disclaimer to consult a vet for diagnosis.${COMMON_STRUCTURE}`,
+    user: `Write a helpful guide to the signs and symptoms of ONE specific, common pet health issue. Always include a strong disclaimer to consult a vet for diagnosis.${COMMON_STRUCTURE}`,
   },
   {
     system: `You are a pet safety expert who helps owners prepare for emergencies.`,
-    user: `Create a practical guide on ONE specific aspect of pet safety (e.g., "what to include in a pet first-aid kit," "a guide to keeping your pet safe during summer heatwaves," or "how to perform the pet Heimlich maneuver").${COMMON_STRUCTURE}`,
+    user: `Create a practical guide on ONE specific aspect of pet safety.${COMMON_STRUCTURE}`,
   },
   {
     system: `You are a senior pet care specialist.`,
-    user: `Write a compassionate guide to caring for a senior pet, focusing on ONE specific aspect (e.g., "how to make your home more comfortable for an aging dog," "common health problems in senior cats," or "a guide to knowing when it's time to say goodbye").${COMMON_STRUCTURE}`,
+    user: `Write a compassionate guide to caring for a senior pet, focusing on ONE specific aspect.${COMMON_STRUCTURE}`,
   },
 ];
 
@@ -72,11 +72,11 @@ const healthTemplates = [
 const productTemplates = [
   {
     system: `You are a dedicated pet product tester who provides honest, in-depth reviews.`,
-    user: `Write a "Best Of" list for ONE specific, narrow category of pet products (e.g., "the 5 best indestructible chew toys for power-chewer dogs," "a guide to the best automatic litter boxes," or "the top-rated pet carriers for air travel"). Include pros, cons, and who each product is best for.${COMMON_STRUCTURE}`,
+    user: `Write a "Best Of" list for ONE specific, narrow category of pet products. Include pros, cons, and who each product is best for.${COMMON_STRUCTURE}`,
   },
   {
     system: `You are a pet nutrition expert who helps owners decipher pet food labels.`,
-    user: `Create a detailed buyer's guide to choosing ONE specific type of pet food (e.g., "how to read a dog food label and what to look for," "a guide to grain-free vs. grain-inclusive cat food," or "the best healthy treats for your dog").${COMMON_STRUCTURE}`,
+    user: `Create a detailed buyer's guide to choosing ONE specific type of pet food.${COMMON_STRUCTURE}`,
   },
 ];
 
@@ -85,15 +85,15 @@ const productTemplates = [
 const wildlifeTemplates = [
   {
     system: `You are a passionate wildlife biologist and storyteller, like David Attenborough, who shares fascinating facts about the natural world.`,
-    user: `Write a fascinating explainer article about ONE specific, incredible animal or animal behavior (e.g., "the amazing intelligence of octopuses," "a guide to the great wildebeest migration," or "how do birds navigate during migration?"). Make the science engaging and full of wonder.${COMMON_STRUCTURE}`,
+    user: `Write a fascinating explainer article about ONE specific, incredible animal or animal behavior. Make the science engaging and full of wonder.${COMMON_STRUCTURE}`,
   },
   {
     system: `You are a conservation advocate who raises awareness about important issues.`,
-    user: `Create an article that highlights the story of ONE specific endangered species or conservation effort (e.g., "the fight to save the black rhino," "how wildlife corridors are helping animals survive," or "5 simple things you can do to help protect local wildlife").${COMMON_STRUCTURE}`,
+    user: `Create an article that highlights the story of ONE specific endangered species or conservation effort.${COMMON_STRUCTURE}`,
   },
   {
     system: `You are a "backyard biologist" who helps people appreciate the nature around them.`,
-    user: `Write a guide on how to attract ONE specific type of wildlife to your backyard in a safe and responsible way (e.g., "a beginner's guide to attracting hummingbirds," "how to create a butterfly-friendly garden," or "the best types of birdseed for common backyard birds").${COMMON_STRUCTURE}`,
+    user: `Write a guide on how to attract ONE specific type of wildlife to your backyard in a safe and responsible way.${COMMON_STRUCTURE}`,
   },
 ];
 

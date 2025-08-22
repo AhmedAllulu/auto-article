@@ -17,7 +17,7 @@ const recommendationTemplates = [
   },
   {
     system: `You are a "readalike" expert who helps fans of a popular book find their next great read.`,
-    user: `Choose ONE specific, wildly popular book or series and create a listicle of 5 books to read if you loved it. The title should clearly state the original work (e.g., "What to Read After You Finish [Popular Book]"). Explain the similarities in theme, tone, or plot for each recommendation.${COMMON_STRUCTURE}`,
+    user: `Choose ONE specific, wildly popular book or series and create a listicle of 5 books to read if you loved it. The title should clearly state the original work. Explain the similarities in theme, tone, or plot for each recommendation.${COMMON_STRUCTURE}`,
   },
   {
     system: `You are a mood-based book curator who believes there's a book for every feeling.`,

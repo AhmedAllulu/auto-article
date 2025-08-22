@@ -50,7 +50,7 @@ const officeTemplates = [
   },
   {
     system: `You are a professional scheduler and meeting organizer.`,
-    user: `Pick a popular scheduling tool like Calendly, Doodle, or Google Calendar's appointment scheduling feature. Write a how-to guide for a specific professional (e.g., a consultant, therapist, or sales representative) on how to set up and manage their bookings to reduce back-and-forth communication and prevent scheduling conflicts.${COMMON_STRUCTURE}`,
+    user: `Pick a popular scheduling tool like Calendly, Doodle, or Google Calendar's appointment scheduling feature. Write a how-to guide for a specific professional on how to set up and manage their bookings to reduce back-and-forth communication and prevent scheduling conflicts.${COMMON_STRUCTURE}`,
   }
 ];
 
@@ -130,11 +130,11 @@ const hardwareTemplates = [
   },
   {
     system: `You are a custom PC building advisor.`,
-    user: `Write a tutorial that guides a user through the entire process of building their first PC for a specific budget and purpose (e.g., a mid-range gaming PC, a budget home office PC). Cover selecting compatible parts, the step-by-step assembly process, and the initial software setup (installing the OS and drivers).${COMMON_STRUCTURE}`,
+    user: `Write a tutorial that guides a user through the entire process of building their first PC for a specific budget and purpose. Cover selecting compatible parts, the step-by-step assembly process, and the initial software setup (installing the OS and drivers).${COMMON_STRUCTURE}`,
   },
   {
     system: `You are a specialist in troubleshooting common hardware issues.`,
-    user: `Choose a common computer problem (e.g., "PC won't turn on," "frequent blue screens," "overheating issues"). Write a systematic troubleshooting guide that helps users diagnose the problem step-by-step, from simple checks to more advanced hardware tests, to identify the faulty component.${COMMON_STRUCTURE}`,
+    user: `Choose a common computer problem. Write a systematic troubleshooting guide that helps users diagnose the problem step-by-step, from simple checks to more advanced hardware tests, to identify the faulty component.${COMMON_STRUCTURE}`,
   },
   {
     system: `You are a specialist in custom mechanical keyboards.`,
@@ -170,7 +170,7 @@ const securityTemplates = [
   },
   {
     system: `You are an expert on securing Internet of Things (IoT) devices.`,
-    user: `Choose a category of smart home device (e.g., security cameras, smart speakers, or smart plugs). Write a tutorial on the essential security steps users should take when setting them up, such as changing default passwords, isolating them on a guest network, and managing privacy settings.${COMMON_STRUCTURE}`,
+    user: `Choose a category of smart home device. Write a tutorial on the essential security steps users should take when setting them up, such as changing default passwords, isolating them on a guest network, and managing privacy settings.${COMMON_STRUCTURE}`,
   },
   {
     system: `You are a public Wi-Fi safety advisor.`,
@@ -182,7 +182,7 @@ const securityTemplates = [
   },
   {
     system: `You are an expert on child online safety.`,
-    user: `Select a popular online platform or device used by children (e.g., TikTok, YouTube, an iPad, or a gaming console). Create a guide for parents on how to set up and use parental controls effectively to manage screen time, filter content, and protect their children's privacy.${COMMON_STRUCTURE}`,
+    user: `Select a popular online platform or device used by children. Create a guide for parents on how to set up and use parental controls effectively to manage screen time, filter content, and protect their children's privacy.${COMMON_STRUCTURE}`,
   }
 ];
 
@@ -195,7 +195,7 @@ const gamingTemplates = [
     },
     {
         system: `You are a live streaming production specialist.`,
-        user: `Select a streaming software like OBS Studio or Streamlabs and create a detailed tutorial on setting up a professional streaming layout. Cover adding a webcam with a green screen effect (chroma key), creating multiple scenes (e.g., 'Be Right Back', 'Gaming', 'Just Chatting'), and configuring custom alerts and overlays.${COMMON_STRUCTURE}`
+        user: `Select a streaming software like OBS Studio or Streamlabs and create a detailed tutorial on setting up a professional streaming layout. Cover adding a webcam with a green screen effect (chroma key), creating multiple scenes, and configuring custom alerts and overlays.${COMMON_STRUCTURE}`
     },
     {
         system: `You are a game server administrator.`,
@@ -211,7 +211,7 @@ const gamingTemplates = [
     },
     {
         system: `You are a gaming audio specialist.`,
-        user: `Write a guide on how to set up and configure audio for competitive gaming. Choose a specific technology like virtual surround sound software (e.g., DTS Headphone:X or Dolby Atmos for Headphones) and explain how to configure it with a gaming headset to accurately hear enemy footsteps and positional cues.${COMMON_STRUCTURE}`
+        user: `Write a guide on how to set up and configure audio for competitive gaming. Choose a specific technology like virtual surround sound software and explain how to configure it with a gaming headset to accurately hear enemy footsteps and positional cues.${COMMON_STRUCTURE}`
     },
     {
         system: `You are a cloud gaming expert.`,
@@ -227,7 +227,7 @@ const gamingTemplates = [
     },
     {
         system: `You are a specialist in a specific gaming genre.`,
-        user: `Pick a popular competitive game genre (e.g., First-Person Shooter, MOBA, or Fighting Game). Write a tutorial on the technical skills and settings required to improve, such as how to properly set mouse sensitivity and DPI for FPS games, or how to configure controller settings for fighting games.${COMMON_STRUCTURE}`
+        user: `Pick a popular competitive game genre. Write a tutorial on the technical skills and settings required to improve, such as how to properly set mouse sensitivity and DPI for FPS games, or how to configure controller settings for fighting games.${COMMON_STRUCTURE}`
     }
 ];
 
@@ -251,7 +251,7 @@ const devToolsTemplates = [
     },
     {
         system: `You are an API testing specialist.`,
-        user: `Choose a popular API testing tool like Postman or Insomnia. Create a tutorial on how to make your first API requests. Explain how to test GET and POST requests, manage authentication (e.g., with an API key), and organize requests into collections for a specific public API (like a weather or movie database API).${COMMON_STRUCTURE}`
+        user: `Choose a popular API testing tool like Postman or Insomnia. Create a tutorial on how to make your first API requests. Explain how to test GET and POST requests, manage authentication, and organize requests into collections for a specific public API.${COMMON_STRUCTURE}`
     },
     {
         system: `You are a home lab and self-hosting enthusiast.`,
@@ -259,7 +259,7 @@ const devToolsTemplates = [
     },
     {
         system: `You are a package manager expert.`,
-        user: `Select a package manager for a specific ecosystem (e.g., npm for Node.js, pip for Python, or Homebrew for macOS). Create a guide that explains its core functionalities: how to search for, install, update, and remove packages for a project or for system-wide use.${COMMON_STRUCTURE}`
+        user: `Select a package manager for a specific ecosystem. Create a guide that explains its core functionalities: how to search for, install, update, and remove packages for a project or for system-wide use.${COMMON_STRUCTURE}`
     },
     {
         system: `You are a secure coding advocate.`,
@@ -291,15 +291,15 @@ const financeTechTemplates = [
     },
     {
         system: `You are a tax software guide.`,
-        user: `Select a widely used tax preparation software like TurboTax or H&R Block. Write a how-to guide for a specific user profile (e.g., a freelancer or an investor with capital gains) on how to navigate the software to accurately report their income and find common deductions.${COMMON_STRUCTURE}`
+        user: `Select a widely used tax preparation software like TurboTax or H&R Block. Write a how-to guide for a specific user profile on how to navigate the software to accurately report their income and find common deductions.${COMMON_STRUCTURE}`
     },
     {
         system: `You are a DeFi (Decentralized Finance) educator.`,
-        user: `Choose a specific DeFi protocol on a popular blockchain (e.g., Uniswap for swapping tokens, or Aave for lending/borrowing). Create a beginner's tutorial explaining how to connect a wallet to the protocol and perform one core function. Emphasize the risks involved and how to verify smart contracts.${COMMON_STRUCTURE}`
+        user: `Choose a specific DeFi protocol on a popular blockchain. Create a beginner's tutorial explaining how to connect a wallet to the protocol and perform one core function. Emphasize the risks involved and how to verify smart contracts.${COMMON_STRUCTURE}`
     },
     {
         system: `You are an expert on securing financial accounts.`,
-        user: `Write a guide on how to conduct a security audit of your online banking and investment accounts. Cover setting strong, unique passwords, enabling the strongest multi-factor authentication available (e.g., authenticator app over SMS), and setting up security alerts.${COMMON_STRUCTURE}`
+        user: `Write a guide on how to conduct a security audit of your online banking and investment accounts. Cover setting strong, unique passwords, enabling the strongest multi-factor authentication available, and setting up security alerts.${COMMON_STRUCTURE}`
     },
     {
         system: `You are a specialist in stock and investment platforms.`,
@@ -311,7 +311,7 @@ const financeTechTemplates = [
     },
     {
         system: `You are a peer-to-peer payment app safety advisor.`,
-        user: `Choose a popular P2P payment app like Venmo, PayPal, or Cash App. Write a tutorial on how to use it safely, focusing on privacy settings (e.g., making transactions private), avoiding common scams, and what to do if you send money to the wrong person.${COMMON_STRUCTURE}`
+        user: `Choose a popular P2P payment app like Venmo, PayPal, or Cash App. Write a tutorial on how to use it safely, focusing on privacy settings, avoiding common scams, and what to do if you send money to the wrong person.${COMMON_STRUCTURE}`
     },
     {
         system: `You are an NFT (Non-Fungible Token) specialist.`,
@@ -355,7 +355,7 @@ const smartHomeTemplates = [
   },
   {
     system: `You are a specialist in integrating different smart home ecosystems.`,
-    user: `Write a guide on how to use a service like Matter or IFTTT to make smart home devices from different brands (e.g., Google, Amazon, Apple) work together seamlessly. Choose a specific use case, like having a Ring doorbell trigger an Apple HomeKit light.${COMMON_STRUCTURE}`,
+    user: `Write a guide on how to use a service like Matter or IFTTT to make smart home devices from different brands work together seamlessly. Choose a specific use case, like having a Ring doorbell trigger an Apple HomeKit light.${COMMON_STRUCTURE}`,
   },
   {
     system: `You are a home media server expert.`,
@@ -392,7 +392,7 @@ const aiToolsTemplates = [
   },
   {
     system: `You are an AI image generation artist.`,
-    user: `Select a specific AI image generator like Midjourney or Stable Diffusion. Create a guide on how to generate a specific artistic style (e.g., photorealistic portraits, vintage sci-fi posters, or minimalist vector logos). Explain how to craft effective prompts, use negative prompts, and control parameters like aspect ratio and seed.${COMMON_STRUCTURE}`,
+    user: `Select a specific AI image generator like Midjourney or Stable Diffusion. Create a guide on how to generate a specific artistic style. Explain how to craft effective prompts, use negative prompts, and control parameters like aspect ratio and seed.${COMMON_STRUCTURE}`,
   },
   {
     system: `You are a specialist in local AI model deployment.`,
@@ -400,7 +400,7 @@ const aiToolsTemplates = [
   },
   {
     system: `You are an expert in AI-powered video and audio tools.`,
-    user: `Select an AI tool that enhances audio or video (e.g., an AI-powered noise removal tool, an automatic video editor, or a text-to-speech generator). Write a tutorial on how a content creator can use this tool to significantly improve the quality of their podcast or YouTube video.${COMMON_STRUCTURE}`,
+    user: `Select an AI tool that enhances audio or video. Write a tutorial on how a content creator can use this tool to significantly improve the quality of their podcast or YouTube video.${COMMON_STRUCTURE}`,
   },
   {
     system: `You are a personal AI customization expert.`,
@@ -432,7 +432,7 @@ const mobileDevTemplates = [
   },
   {
     system: `You are an expert on mobile app monetization.`,
-    user: `Choose a mobile app monetization model (e.g., in-app advertising, in-app purchases, subscriptions). Using a specific development framework, write a tutorial on how to implement the necessary SDKs and code to add this monetization feature to a simple application.${COMMON_STRUCTURE}`
+    user: `Choose a mobile app monetization model. Using a specific development framework, write a tutorial on how to implement the necessary SDKs and code to add this monetization feature to a simple application.${COMMON_STRUCTURE}`
   },
   {
     system: `You are a mobile backend-as-a-service (BaaS) specialist.`,
