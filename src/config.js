@@ -137,6 +137,25 @@ export const config = {
   unsplash: {
     accessKey: process.env.UNSPLASH_ACCESS_KEY || '',
   },
+  openverse: {
+    // OAuth2 credentials for automatic token refresh
+    clientId: process.env.OPENVERSE_CLIENT_ID || '',
+    clientSecret: process.env.OPENVERSE_CLIENT_SECRET || '',
+    // Optional bearer token. Anonymous requests work, but tokens raise rate limits.
+    token: process.env.OPENVERSE_TOKEN || '',
+    // Comma-separated slugs of categories where we should prefer Openverse first
+    // Defaults to entertainment (covers films, TV, games, books topics)
+    preferFor: parseList(process.env.OPENVERSE_PREFERRED_CATEGORIES || 'entertainment'),
+    // Licenses to include. To avoid attribution requirements by default, prefer
+    // public domain options. You can override to include cc-by if you add attribution display.
+    licenses: parseList(process.env.OPENVERSE_LICENSES || 'cc0,pdm'),
+  },
+  // Image provider strategy: 'unsplash', 'openverse', 'smart', 'both'
+  // - unsplash: Only use Unsplash
+  // - openverse: Only use Openverse
+  // - smart: Use category-based selection (default)
+  // - both: Try both providers for every request (slower but more coverage)
+  imageProvider: process.env.IMAGE_PROVIDER || 'smart',
   https: {
     certPath: process.env.SSL_CERT_PATH || '',
     keyPath: process.env.SSL_KEY_PATH || '',

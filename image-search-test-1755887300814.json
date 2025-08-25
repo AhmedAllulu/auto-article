@@ -1,0 +1,371 @@
+{
+  "timestamp": "2025-08-22T18:28:20.814Z",
+  "summary": {
+    "totalArticles": 20,
+    "successCount": 20,
+    "failCount": 0,
+    "successRate": 100
+  },
+  "results": [
+    {
+      "id": "88010b58-fc15-43db-ba6a-309d54b13673",
+      "title": "The Brain Unlocked: 5 Essential Neuroscience Books",
+      "slug": "the-brain-unlocked-5-essential-neuroscience-books",
+      "category": "books-literature",
+      "currentImage": null,
+      "searches": [
+        {
+          "type": "title",
+          "query": "The Brain Unlocked: 5 Essential Neuroscience Books",
+          "imageUrl": "https://api.openverse.org/v1/images/27f7aed3-8cf6-4a01-beb6-edf6aad404fa/thumb/?full_size=true&compressed=true&watermarked=false",
+          "success": true,
+          "provider": "Openverse (proxy)",
+          "isSvg": false,
+          "isOptimized": true
+        }
+      ]
+    },
+    {
+      "id": "fb6b594a-ee5f-42d9-8861-7a17fd2ed939",
+      "title": "Mastering the Long Take: How 1917 Feels Like One Seamless Shot",
+      "slug": "mastering-the-long-take-how-1917-feels-like-one-seamless-shot",
+      "category": "movies-tv-shows",
+      "currentImage": "https://images.unsplash.com/photo-1695372040482-56f0ae6dc5ab?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3OTA0MzZ8MHwxfHNlYXJjaHwxfHxNYXN0ZXJpbmclMjB0aGUlMjBMb25nJTIwVGFrZSUzQSUyMEhvdyUyMDE5MTclMjBGZWVscyUyMExpa2UlMjBPbmUlMjBTZWFtbGVzcyUyMFNob3R8ZW58MHwwfHx8MTc1NTg3NzI0NHww&ixlib=rb-4.1.0&q=80&w=1080&auto=format",
+      "searches": [
+        {
+          "type": "title",
+          "query": "Mastering the Long Take: How 1917 Feels Like One Seamless Shot",
+          "imageUrl": "https://api.openverse.org/v1/images/444b713a-6a9d-4570-91c8-de5df186cf86/thumb/?full_size=true&compressed=true&watermarked=false",
+          "success": true,
+          "provider": "Openverse (proxy)",
+          "isSvg": false,
+          "isOptimized": true
+        }
+      ]
+    },
+    {
+      "id": "ab7bf405-d2a1-4bf0-8166-729d3155c26c",
+      "title": "Patagonia Adventures: Classic Treks, Glaciers & Wildlife Escapes",
+      "slug": "patagonia-adventures-classic-treks-glaciers-and-wildlife-escapes",
+      "category": "travel-destinations",
+      "currentImage": "https://images.unsplash.com/photo-1580583834225-37eaac02a819?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3OTA0MzZ8MHwxfHNlYXJjaHwyfHxQYXRhZ29uaWElMjBBZHZlbnR1cmVzJTNBJTIwQ2xhc3NpYyUyMFRyZWtzJTJDJTIwR2xhY2llcnMlMjAlMjYlMjBXaWxkbGlmZSUyMEVzY2FwZXN8ZW58MHwwfHx8MTc1NTg2OTQ0MXww&ixlib=rb-4.1.0&q=80&w=1080&auto=format",
+      "searches": [
+        {
+          "type": "title",
+          "query": "Patagonia Adventures: Classic Treks, Glaciers & Wildlife Escapes",
+          "imageUrl": "https://api.openverse.org/v1/images/03708826-5ad6-4f56-a1e7-9bf670dd18fd/thumb/?full_size=true&compressed=true&watermarked=false",
+          "success": true,
+          "provider": "Openverse (proxy)",
+          "isSvg": false,
+          "isOptimized": true
+        }
+      ]
+    },
+    {
+      "id": "ba6afae7-9721-4a12-8964-c76fc1c82601",
+      "title": "Top 4 Dolomites Adventures: Peaks, Rails & Ferrata",
+      "slug": "top-4-dolomites-adventures-peaks-rails-and-ferrata",
+      "category": "travel-destinations",
+      "currentImage": "https://images.unsplash.com/photo-1599384265291-3ccbf94d99fe?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3OTA0MzZ8MHwxfHNlYXJjaHwxfHxUb3AlMjA0JTIwRG9sb21pdGVzJTIwQWR2ZW50dXJlcyUzQSUyMFBlYWtzJTJDJTIwUmFpbHMlMjAlMjYlMjBGZXJyYXRhfGVufDB8MHx8fDE3NTU4NjE3OTN8MA&ixlib=rb-4.1.0&q=80&w=1080&auto=format",
+      "searches": [
+        {
+          "type": "title",
+          "query": "Top 4 Dolomites Adventures: Peaks, Rails & Ferrata",
+          "imageUrl": "https://api.openverse.org/v1/images/6d910f7a-ad07-45d5-bf7a-0e7f9825c312/thumb/?full_size=true&compressed=true&watermarked=false",
+          "success": true,
+          "provider": "Openverse (proxy)",
+          "isSvg": false,
+          "isOptimized": true
+        }
+      ]
+    },
+    {
+      "id": "86d7f8e8-f582-4803-b2b8-6ddfbb71d9d6",
+      "title": "Dolomites Adventure Guide: Top 5 Hikes and Ferratas",
+      "slug": "dolomites-adventure-guide-top-5-hikes-and-ferratas",
+      "category": "travel-destinations",
+      "currentImage": "https://images.unsplash.com/photo-1631902624867-bc4b811a6bc3?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3OTA0MzZ8MHwxfHNlYXJjaHwxfHxEb2xvbWl0ZXMlMjBBZHZlbnR1cmUlMjBHdWlkZSUzQSUyMFRvcCUyMDUlMjBIaWtlcyUyMGFuZCUyMEZlcnJhdGFzfGVufDB8MHx8fDE3NTU4NjA5Nzd8MA&ixlib=rb-4.1.0&q=80&w=1080&auto=format",
+      "searches": [
+        {
+          "type": "title",
+          "query": "Dolomites Adventure Guide: Top 5 Hikes and Ferratas",
+          "imageUrl": "https://api.openverse.org/v1/images/6d910f7a-ad07-45d5-bf7a-0e7f9825c312/thumb/?full_size=true&compressed=true&watermarked=false",
+          "success": true,
+          "provider": "Openverse (proxy)",
+          "isSvg": false,
+          "isOptimized": true
+        }
+      ]
+    },
+    {
+      "id": "b86c52be-50a4-40f7-8a12-3ffd0ab96ea0",
+      "title": "Master Mail Merge in Word for Business Reports Swiftly",
+      "slug": "master-mail-merge-in-word-for-business-reports-swiftly",
+      "category": "technology-how-tos",
+      "currentImage": "https://images.unsplash.com/photo-1508769941802-a6ca19d19e08?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3OTA0MzZ8MHwxfHNlYXJjaHwxfHxNYXN0ZXIlMjBNYWlsJTIwTWVyZ2UlMjBpbiUyMFdvcmQlMjBmb3IlMjBCdXNpbmVzcyUyMFJlcG9ydHMlMjBTd2lmdGx5fGVufDB8MHx8fDE3NTU4NjAzNDZ8MA&ixlib=rb-4.1.0&q=80&w=1080&auto=format",
+      "searches": [
+        {
+          "type": "title",
+          "query": "Master Mail Merge in Word for Business Reports Swiftly",
+          "imageUrl": "https://api.openverse.org/v1/images/444b713a-6a9d-4570-91c8-de5df186cf86/thumb/?full_size=true&compressed=true&watermarked=false",
+          "success": true,
+          "provider": "Openverse (proxy)",
+          "isSvg": false,
+          "isOptimized": true
+        }
+      ]
+    },
+    {
+      "id": "0abec821-92ec-4b83-b678-5795a7efdea9",
+      "title": "Uniswap Token Swap for Beginners: Wallet Setup & Risks",
+      "slug": "uniswap-token-swap-for-beginners-wallet-setup-and-risks",
+      "category": "technology-how-tos",
+      "currentImage": "https://images.unsplash.com/photo-1625062928770-93cb66fd3370?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3OTA0MzZ8MHwxfHNlYXJjaHwxfHxVbmlzd2FwJTIwVG9rZW4lMjBTd2FwJTIwZm9yJTIwQmVnaW5uZXJzJTNBJTIwV2FsbGV0JTIwU2V0dXAlMjAlMjYlMjBSaXNrc3xlbnwwfDB8fHwxNzU1ODU5NjQ3fDA&ixlib=rb-4.1.0&q=80&w=1080&auto=format",
+      "searches": [
+        {
+          "type": "title",
+          "query": "Uniswap Token Swap for Beginners: Wallet Setup & Risks",
+          "imageUrl": "https://api.openverse.org/v1/images/fd9001ee-b08c-46ec-ade6-bb37888351be/thumb/?full_size=true&compressed=true&watermarked=false",
+          "success": true,
+          "provider": "Openverse (proxy)",
+          "isSvg": false,
+          "isOptimized": true
+        }
+      ]
+    },
+    {
+      "id": "7e4646d6-49db-4025-9cf7-aedd9e893a15",
+      "title": "Progressive Overload: Essential for Fitness Growth",
+      "slug": "progressive-overload-essential-for-fitness-growth",
+      "category": "sports-fitness",
+      "currentImage": "https://images.unsplash.com/photo-1646496496923-8199ef0bf3eb?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3OTA0MzZ8MHwxfHNlYXJjaHwxfHxQcm9ncmVzc2l2ZSUyME92ZXJsb2FkJTNBJTIwRXNzZW50aWFsJTIwZm9yJTIwRml0bmVzcyUyMEdyb3d0aHxlbnwwfDB8fHwxNzU1ODU5MDU0fDA&ixlib=rb-4.1.0&q=80&w=1080&auto=format",
+      "searches": [
+        {
+          "type": "title",
+          "query": "Progressive Overload: Essential for Fitness Growth",
+          "imageUrl": "https://api.openverse.org/v1/images/15a6c373-0721-4b66-8c94-b9f5fa143bc3/thumb/?full_size=true&compressed=true&watermarked=false",
+          "success": true,
+          "provider": "Openverse (proxy)",
+          "isSvg": false,
+          "isOptimized": true
+        }
+      ]
+    },
+    {
+      "id": "9cb25839-de76-4b81-8f8b-4dba985fe729",
+      "title": "Progressive Overload: The Core Principle for Growth",
+      "slug": "progressive-overload-the-core-principle-for-growth",
+      "category": "sports-fitness",
+      "currentImage": "https://images.unsplash.com/photo-1641706531865-4d17526f798a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3OTA0MzZ8MHwxfHNlYXJjaHwxfHxQcm9ncmVzc2l2ZSUyME92ZXJsb2FkJTNBJTIwVGhlJTIwQ29yZSUyMFByaW5jaXBsZSUyMGZvciUyMEdyb3d0aHxlbnwwfDB8fHwxNzU1ODU4MzUzfDA&ixlib=rb-4.1.0&q=80&w=1080&auto=format",
+      "searches": [
+        {
+          "type": "title",
+          "query": "Progressive Overload: The Core Principle for Growth",
+          "imageUrl": "https://api.openverse.org/v1/images/15a6c373-0721-4b66-8c94-b9f5fa143bc3/thumb/?full_size=true&compressed=true&watermarked=false",
+          "success": true,
+          "provider": "Openverse (proxy)",
+          "isSvg": false,
+          "isOptimized": true
+        }
+      ]
+    },
+    {
+      "id": "3537c281-0fed-43fc-8e8b-6ed109901a94",
+      "title": "Advancements in Autonomous Drones for Disaster Relief",
+      "slug": "advancements-in-autonomous-drones-for-disaster-relief",
+      "category": "science-innovation",
+      "currentImage": "https://images.unsplash.com/photo-1604994877540-7b2d97ff1303?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3OTA0MzZ8MHwxfHNlYXJjaHwxfHxBZHZhbmNlbWVudHMlMjBpbiUyMEF1dG9ub21vdXMlMjBEcm9uZXMlMjBmb3IlMjBEaXNhc3RlciUyMFJlbGllZnxlbnwwfDB8fHwxNzU1ODU3NjI3fDA&ixlib=rb-4.1.0&q=80&w=1080&auto=format",
+      "searches": [
+        {
+          "type": "title",
+          "query": "Advancements in Autonomous Drones for Disaster Relief",
+          "imageUrl": "https://api.openverse.org/v1/images/05528eb8-f9d0-4ce4-b6bd-0c7e0df40eea/thumb/?full_size=true&compressed=true&watermarked=false",
+          "success": true,
+          "provider": "Openverse (proxy)",
+          "isSvg": false,
+          "isOptimized": true
+        }
+      ]
+    },
+    {
+      "id": "019c17d0-fe83-4b7f-aa91-b633276989fb",
+      "title": "Auroras Unveiled: The Science of the Northern Lights",
+      "slug": "auroras-unveiled-the-science-of-the-northern-lights",
+      "category": "science-innovation",
+      "currentImage": "https://images.unsplash.com/photo-1598769321729-a160257df5e4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3OTA0MzZ8MHwxfHNlYXJjaHwxfHxBdXJvcmFzJTIwVW52ZWlsZWQlM0ElMjBUaGUlMjBTY2llbmNlJTIwb2YlMjB0aGUlMjBOb3J0aGVybiUyMExpZ2h0c3xlbnwwfDB8fHwxNzU1ODU2OTE4fDA&ixlib=rb-4.1.0&q=80&w=1080&auto=format",
+      "searches": [
+        {
+          "type": "title",
+          "query": "Auroras Unveiled: The Science of the Northern Lights",
+          "imageUrl": "https://api.openverse.org/v1/images/9e442175-c97a-4c89-b492-e702e649e45b/thumb/?full_size=true&compressed=true&watermarked=false",
+          "success": true,
+          "provider": "Openverse (proxy)",
+          "isSvg": false,
+          "isOptimized": true
+        }
+      ]
+    },
+    {
+      "id": "9d215994-7e0c-43f4-8d58-ff6419d1c24a",
+      "title": "Five Creative, Non-Awkward Dating App Openers That Work",
+      "slug": "five-creative-non-awkward-dating-app-openers-that-work",
+      "category": "relationships-dating",
+      "currentImage": "https://images.unsplash.com/photo-1677256268532-d038c315ec67?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3OTA0MzZ8MHwxfHNlYXJjaHwxfHxGaXZlJTIwQ3JlYXRpdmUlMkMlMjBOb24tQXdrd2FyZCUyMERhdGluZyUyMEFwcCUyME9wZW5lcnMlMjBUaGF0JTIwV29ya3xlbnwwfDB8fHwxNzU1ODU2MTYxfDA&ixlib=rb-4.1.0&q=80&w=1080&auto=format",
+      "searches": [
+        {
+          "type": "title",
+          "query": "Five Creative, Non-Awkward Dating App Openers That Work",
+          "imageUrl": "https://api.openverse.org/v1/images/255d524b-ab52-4e23-928f-a6ad69fa0121/thumb/?full_size=true&compressed=true&watermarked=false",
+          "success": true,
+          "provider": "Openverse (proxy)",
+          "isSvg": false,
+          "isOptimized": true
+        }
+      ]
+    },
+    {
+      "id": "fa6cda8d-2cf6-4624-8137-1451d1b8a076",
+      "title": "First Week After a Breakup: A Practical Self-Care Guide",
+      "slug": "first-week-after-a-breakup-a-practical-self-care-guide",
+      "category": "relationships-dating",
+      "currentImage": "https://images.unsplash.com/photo-1559769732-3a943df124b0?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3OTA0MzZ8MHwxfHNlYXJjaHwyfHxGaXJzdCUyMFdlZWslMjBBZnRlciUyMGElMjBCcmVha3VwJTNBJTIwQSUyMFByYWN0aWNhbCUyMFNlbGYtQ2FyZSUyMEd1aWRlfGVufDB8MHx8fDE3NTU4NTU0ODF8MA&ixlib=rb-4.1.0&q=80&w=1080&auto=format",
+      "searches": [
+        {
+          "type": "title",
+          "query": "First Week After a Breakup: A Practical Self-Care Guide",
+          "imageUrl": "https://api.openverse.org/v1/images/a72660f2-3e18-4982-8803-a68448182fe3/thumb/?full_size=true&compressed=true&watermarked=false",
+          "success": true,
+          "provider": "Openverse (proxy)",
+          "isSvg": false,
+          "isOptimized": true
+        }
+      ]
+    },
+    {
+      "id": "a978d3bc-96b9-4c10-abe1-92b1b041b767",
+      "title": "Pricing Your Home for FSBO Success: A One-Task Guide",
+      "slug": "pricing-your-home-for-fsbo-success-a-one-task-guide",
+      "category": "real-estate-property",
+      "currentImage": "https://images.unsplash.com/photo-1653959234854-e0bbad4d7597?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3OTA0MzZ8MHwxfHNlYXJjaHwxfHxQcmljaW5nJTIwWW91ciUyMEhvbWUlMjBmb3IlMjBGU0JPJTIwU3VjY2VzcyUzQSUyMEElMjBPbmUtVGFzayUyMEd1aWRlfGVufDB8MHx8fDE3NTU4NTQ4NzB8MA&ixlib=rb-4.1.0&q=80&w=1080&auto=format",
+      "searches": [
+        {
+          "type": "title",
+          "query": "Pricing Your Home for FSBO Success: A One-Task Guide",
+          "imageUrl": "https://api.openverse.org/v1/images/e4edf406-e8e0-4d01-92a8-639e734d234a/thumb/?full_size=true&compressed=true&watermarked=false",
+          "success": true,
+          "provider": "Openverse (proxy)",
+          "isSvg": false,
+          "isOptimized": true
+        }
+      ]
+    },
+    {
+      "id": "da05f842-38e5-4f90-a09a-5ef2f9002c0d",
+      "title": "How to Make a Winning Offer on a House: Beginner's Guide",
+      "slug": "how-to-make-a-winning-offer-on-a-house-beginners-guide",
+      "category": "real-estate-property",
+      "currentImage": "https://images.unsplash.com/photo-1480074568708-e7b720bb3f09?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3OTA0MzZ8MHwxfHNlYXJjaHwxfHxIb3clMjB0byUyME1ha2UlMjBhJTIwV2lubmluZyUyME9mZmVyJTIwb24lMjBhJTIwSG91c2UlM0ElMjBCZWdpbm5lciUyN3MlMjBHdWlkZXxlbnwwfDB8fHwxNzU1ODU0MjkxfDA&ixlib=rb-4.1.0&q=80&w=1080&auto=format",
+      "searches": [
+        {
+          "type": "title",
+          "query": "How to Make a Winning Offer on a House: Beginner's Guide",
+          "imageUrl": "https://api.openverse.org/v1/images/591e1876-f8d5-42bd-af41-ddbb1adbd00b/thumb/?full_size=true&compressed=true&watermarked=false",
+          "success": true,
+          "provider": "Openverse (proxy)",
+          "isSvg": false,
+          "isOptimized": true
+        }
+      ]
+    },
+    {
+      "id": "3693c48b-efa1-4e83-9d04-2b7815c6c8e3",
+      "title": "How to Build a Daily Reading Habit That Sticks Fast",
+      "slug": "how-to-build-a-daily-reading-habit-that-sticks-fast",
+      "category": "productivity-self-improvement",
+      "currentImage": "https://images.unsplash.com/photo-1585411371420-c6b2af304b3a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3OTA0MzZ8MHwxfHNlYXJjaHwxfHxIb3clMjB0byUyMEJ1aWxkJTIwYSUyMERhaWx5JTIwUmVhZGluZyUyMEhhYml0JTIwVGhhdCUyMFN0aWNrcyUyMEZhc3R8ZW58MHwwfHx8MTc1NTg1MzYxNnww&ixlib=rb-4.1.0&q=80&w=1080&auto=format",
+      "searches": [
+        {
+          "type": "title",
+          "query": "How to Build a Daily Reading Habit That Sticks Fast",
+          "imageUrl": "https://api.openverse.org/v1/images/1edfe1b0-3d26-44e6-8fd2-6a44db87d8a5/thumb/?full_size=true&compressed=true&watermarked=false",
+          "success": true,
+          "provider": "Openverse (proxy)",
+          "isSvg": false,
+          "isOptimized": true
+        }
+      ]
+    },
+    {
+      "id": "eb783ceb-81e5-4435-8a78-2932a0d609d4",
+      "title": "Quit Mindless Scrolling: A Science-Backed Plan for Replacing the Habit",
+      "slug": "quit-mindless-scrolling-a-science-backed-plan-for-replacing-the-habit",
+      "category": "productivity-self-improvement",
+      "currentImage": "https://images.unsplash.com/photo-1700520695928-94bd06abfb0b?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3OTA0MzZ8MHwxfHNlYXJjaHwyfHxRdWl0JTIwTWluZGxlc3MlMjBTY3JvbGxpbmclM0ElMjBBJTIwU2NpZW5jZS1CYWNrZWQlMjBQbGFuJTIwZm9yJTIwUmVwbGFjaW5nJTIwdGhlJTIwSGFiaXR8ZW58MHwwfHx8MTc1NTg1Mjk4M3ww&ixlib=rb-4.1.0&q=80&w=1080&auto=format",
+      "searches": [
+        {
+          "type": "title",
+          "query": "Quit Mindless Scrolling: A Science-Backed Plan for Replacing the Habit",
+          "imageUrl": "https://api.openverse.org/v1/images/d22ddb0b-3718-4112-a900-ff9934e83bc4/thumb/?full_size=true&compressed=true&watermarked=false",
+          "success": true,
+          "provider": "Openverse (proxy)",
+          "isSvg": false,
+          "isOptimized": true
+        }
+      ]
+    },
+    {
+      "id": "c8ca62d1-c448-4cf6-b35b-e0635b0cdf16",
+      "title": "Origins of the Modern Environmental Movement and Policy",
+      "slug": "origins-of-the-modern-environmental-movement-and-policy",
+      "category": "politics-current-affairs",
+      "currentImage": "https://images.unsplash.com/photo-1599421852423-e5ac8759684c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3OTA0MzZ8MHwxfHNlYXJjaHwxfHxPcmlnaW5zJTIwb2YlMjB0aGUlMjBNb2Rlcm4lMjBFbnZpcm9ubWVudGFsJTIwTW92ZW1lbnQlMjBhbmQlMjBQb2xpY3l8ZW58MHwwfHx8MTc1NTg1MjM0MHww&ixlib=rb-4.1.0&q=80&w=1080&auto=format",
+      "searches": [
+        {
+          "type": "title",
+          "query": "Origins of the Modern Environmental Movement and Policy",
+          "imageUrl": "https://api.openverse.org/v1/images/e4522326-77db-45a5-9951-63208f5af30f/thumb/?full_size=true&compressed=true&watermarked=false",
+          "success": true,
+          "provider": "Openverse (proxy)",
+          "isSvg": false,
+          "isOptimized": true
+        }
+      ]
+    },
+    {
+      "id": "0531a4d6-ee63-4d18-a2a3-12b8dddb861d",
+      "title": "South China Sea: Geopolitical Significance and Tensions",
+      "slug": "south-china-sea-geopolitical-significance-and-tensions",
+      "category": "politics-current-affairs",
+      "currentImage": "https://images.unsplash.com/photo-1547579055-749f671e6db5?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3OTA0MzZ8MHwxfHNlYXJjaHwyfHxTb3V0aCUyMENoaW5hJTIwU2VhJTNBJTIwR2VvcG9saXRpY2FsJTIwU2lnbmlmaWNhbmNlJTIwYW5kJTIwVGVuc2lvbnN8ZW58MHwwfHx8MTc1NTg1MTc1OXww&ixlib=rb-4.1.0&q=80&w=1080&auto=format",
+      "searches": [
+        {
+          "type": "title",
+          "query": "South China Sea: Geopolitical Significance and Tensions",
+          "imageUrl": "https://api.openverse.org/v1/images/19e24196-96f9-45af-b6cc-1ae75ffa4d02/thumb/?full_size=true&compressed=true&watermarked=false",
+          "success": true,
+          "provider": "Openverse (proxy)",
+          "isSvg": false,
+          "isOptimized": true
+        }
+      ]
+    },
+    {
+      "id": "9ed5fafd-e518-4c53-bd4c-444ca6a584f1",
+      "title": "Teach Your Dog to Leave It in 5 Simple Steps Today",
+      "slug": "teach-your-dog-to-leave-it-in-5-simple-steps-today",
+      "category": "pets-animals",
+      "currentImage": "https://images.unsplash.com/photo-1741872237189-d72b2afbda6e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3OTA0MzZ8MHwxfHNlYXJjaHwxfHxUZWFjaCUyMFlvdXIlMjBEb2clMjB0byUyMExlYXZlJTIwSXQlMjBpbiUyMDUlMjBTaW1wbGUlMjBTdGVwcyUyMFRvZGF5fGVufDB8MHx8fDE3NTU4NTEwNDd8MA&ixlib=rb-4.1.0&q=80&w=1080&auto=format",
+      "searches": [
+        {
+          "type": "title",
+          "query": "Teach Your Dog to Leave It in 5 Simple Steps Today",
+          "imageUrl": "https://api.openverse.org/v1/images/4d09bf13-6ae2-409b-a955-14cc1702cdbe/thumb/?full_size=true&compressed=true&watermarked=false",
+          "success": true,
+          "provider": "Openverse (proxy)",
+          "isSvg": false,
+          "isOptimized": true
+        }
+      ]
+    }
+  ]
+}

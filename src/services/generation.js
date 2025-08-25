@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { query, withTransaction } from '../db.js';
 import { config } from '../config.js';
 import { toSlug } from '../utils/slug.js';
-import { fetchUnsplashImageUrl } from './unsplash.js';
+import { fetchBestImageUrl } from './unsplash.js';
 import { generateArticleWithSearch, generateNoSearch, generateRobustArticle } from './oneMinAI.js';
 import { chatCompletion as openAIChat } from './openAI.js';
 import sanitizeHtml from 'sanitize-html';
@@ -1064,11 +1064,12 @@ async function createMasterArticle(category, { preferWebSearch = false } = {}) {
   const canonicalUrl = canonicalForSlug(slugBase, 'en');
   
   const tImgStart = Date.now();
-  const imageUrl = await fetchUnsplashImageUrl(title);
-  genLog('Unsplash fetched', { 
-    category: category.slug, 
-    ms: Date.now() - tImgStart, 
-    hasImage: Boolean(imageUrl) 
+  const imageUrl = await fetchBestImageUrl(title, category.slug);
+  genLog('Image fetched', {
+    provider: 'auto',
+    category: category.slug,
+    ms: Date.now() - tImgStart,
+    hasImage: Boolean(imageUrl)
   });
   
   const readingTime = estimateReadingTimeMinutes(contentHtml);
@@ -1254,7 +1255,7 @@ async function createBestOfArticle(category, { preferWebSearch = false } = {}) {
   const metaDescription = bestOfJson.metaDescription;
   const canonicalUrl = canonicalForSlug(slugBase, 'en');
 
-  const imageUrl = await fetchUnsplashImageUrl(title);
+  const imageUrl = await fetchBestImageUrl(title, category.slug);
   const readingTime = estimateReadingTimeMinutes(contentHtml);
 
   let bestOfArticle = {
@@ -1329,7 +1330,7 @@ async function createCompareArticle(category, { preferWebSearch = false } = {}) 
   const metaDescription = compareJson.metaDescription;
   const canonicalUrl = canonicalForSlug(slugBase, 'en');
 
-  const imageUrl = await fetchUnsplashImageUrl(title);
+  const imageUrl = await fetchBestImageUrl(title, category.slug);
   const readingTime = estimateReadingTimeMinutes(contentHtml);
 
   let compareArticle = {
@@ -1403,7 +1404,7 @@ async function createTrendsArticle(category, { preferWebSearch = false } = {}) {
   const metaDescription = trendsJson.metaDescription;
   const canonicalUrl = canonicalForSlug(slugBase, 'en');
 
-  const imageUrl = await fetchUnsplashImageUrl(title);
+  const imageUrl = await fetchBestImageUrl(title, category.slug);
   const readingTime = estimateReadingTimeMinutes(contentHtml);
 
   let trendsArticle = {
