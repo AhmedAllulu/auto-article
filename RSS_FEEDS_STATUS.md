@@ -17,13 +17,13 @@ All RSS feeds are working correctly and providing real data for all supported la
 ### Main Feeds (All Working ✅)
 All main RSS feeds work perfectly for all supported languages:
 
-- **English**: `https://vivaverse.top/api/feeds/all.rss?lang=en` (50 articles)
-- **German**: `https://vivaverse.top/api/feeds/all.rss?lang=de` (50 articles)
-- **French**: `https://vivaverse.top/api/feeds/all.rss?lang=fr` (50 articles)
-- **Spanish**: `https://vivaverse.top/api/feeds/all.rss?lang=es` (50 articles)
-- **Portuguese**: `https://vivaverse.top/api/feeds/all.rss?lang=pt` (50 articles)
-- **Arabic**: `https://vivaverse.top/api/feeds/all.rss?lang=ar` (50 articles)
-- **Hindi**: `https://vivaverse.top/api/feeds/all.rss?lang=hi` (50 articles)
+- **English**: `https://megaquantum.net/api/feeds/all.rss?lang=en` (50 articles)
+- **German**: `https://megaquantum.net/api/feeds/all.rss?lang=de` (50 articles)
+- **French**: `https://megaquantum.net/api/feeds/all.rss?lang=fr` (50 articles)
+- **Spanish**: `https://megaquantum.net/api/feeds/all.rss?lang=es` (50 articles)
+- **Portuguese**: `https://megaquantum.net/api/feeds/all.rss?lang=pt` (50 articles)
+- **Arabic**: `https://megaquantum.net/api/feeds/all.rss?lang=ar` (50 articles)
+- **Hindi**: `https://megaquantum.net/api/feeds/all.rss?lang=hi` (50 articles)
 
 ### Category Feeds (All Working ✅)
 All 30 category-specific feeds work for all languages. Sample results:
@@ -94,18 +94,18 @@ All 30 categories have working RSS feeds:
 All feeds are ready for submission to Google Search Console:
 
 **Main Feeds:**
-- https://vivaverse.top/api/feeds/all.rss?lang=en
-- https://vivaverse.top/api/feeds/all.rss?lang=de
-- https://vivaverse.top/api/feeds/all.rss?lang=fr
-- https://vivaverse.top/api/feeds/all.rss?lang=es
-- https://vivaverse.top/api/feeds/all.rss?lang=pt
-- https://vivaverse.top/api/feeds/all.rss?lang=ar
-- https://vivaverse.top/api/feeds/all.rss?lang=hi
+- https://megaquantum.net/api/feeds/all.rss?lang=en
+- https://megaquantum.net/api/feeds/all.rss?lang=de
+- https://megaquantum.net/api/feeds/all.rss?lang=fr
+- https://megaquantum.net/api/feeds/all.rss?lang=es
+- https://megaquantum.net/api/feeds/all.rss?lang=pt
+- https://megaquantum.net/api/feeds/all.rss?lang=ar
+- https://megaquantum.net/api/feeds/all.rss?lang=hi
 
 **Category Feeds (30 available):**
-- https://vivaverse.top/api/feeds/technology.rss
-- https://vivaverse.top/api/feeds/health-wellness.rss
-- https://vivaverse.top/api/feeds/travel-destinations.rss
+- https://megaquantum.net/api/feeds/technology.rss
+- https://megaquantum.net/api/feeds/health-wellness.rss
+- https://megaquantum.net/api/feeds/travel-destinations.rss
 - ... and 27 more
 
 ### SEO Benefits

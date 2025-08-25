@@ -75,7 +75,7 @@ function buildSocialMetaTags({ title, description, canonicalUrl, imageUrl, langu
  * Generate hreflang tags for multi-language content
  */
 function buildHreflangTags({ baseSlug, availableLanguages }) {
-  const baseUrl = config.seo?.canonicalBaseUrl || 'https://vivaverse.top';
+  const baseUrl = config.seo?.canonicalBaseUrl || 'https://megaquantum.net';
   const hreflangTags = [];
 
   // Add hreflang for each available language

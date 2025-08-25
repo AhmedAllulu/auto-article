@@ -37,11 +37,11 @@ const FEED_CONFIG = {
   siteInfo: {
     title: 'VivaVerse',
     description: 'Discover insightful articles, expert analysis, and the latest trends across business, technology, health, science, education, and travel.',
-    link: process.env.CANONICAL_BASE_URL || 'https://vivaverse.top',
+    link: process.env.CANONICAL_BASE_URL || 'https://megaquantum.net',
     language: 'en',
     copyright: `© ${new Date().getFullYear()} Mega Quantum. All rights reserved.`,
-    managingEditor: 'contact@vivaverse.top (VivaVerse Editorial Team)',
-    webMaster: 'contact@vivaverse.top (VivaVerse Technical Team)',
+    managingEditor: 'contact@megaquantum.net (VivaVerse Editorial Team)',
+    webMaster: 'contact@megaquantum.net (VivaVerse Technical Team)',
     generator: 'VivaVerse RSS Generator v1.0',
     ttl: 60 // Time to live in minutes
   }

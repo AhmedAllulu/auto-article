@@ -6,11 +6,11 @@ This guide explains how to set up automated SEO notifications for instant search
 
 ### 1. Google Sitemap Ping
 - Automatically pings Google when new articles are published
-- Uses: `https://www.google.com/ping?sitemap=https://vivaverse.top/api/sitemap.xml`
+- Uses: `https://www.google.com/ping?sitemap=https://megaquantum.net/api/sitemap.xml`
 
 ### 2. Bing Sitemap Ping  
 - Automatically pings Bing when new articles are published
-- Uses: `https://www.bing.com/ping?sitemap=https://vivaverse.top/api/sitemap.xml`
+- Uses: `https://www.bing.com/ping?sitemap=https://megaquantum.net/api/sitemap.xml`
 
 ### 3. IndexNow API (Bing + Yandex + Others)
 - Instantly submits new URLs to IndexNow API
@@ -23,7 +23,7 @@ Add these to your `.env` file in the `auto-article` folder:
 
 ```bash
 # SEO Notification Settings
-CANONICAL_BASE_URL=https://vivaverse.top
+CANONICAL_BASE_URL=https://megaquantum.net
 INDEXNOW_API_KEY=your-32-character-hex-key-here
 
 # Enable/Disable Notifications (default: true)
@@ -54,7 +54,7 @@ INDEXNOW_API_KEY=a1b2c3d4e5f6789012345678901234567890abcd
 ```
 
 ### Step 4: Verify Key File Access
-The key file must be accessible at: `https://vivaverse.top/[your-key].txt`
+The key file must be accessible at: `https://megaquantum.net/[your-key].txt`
 
 ## How It Works
 
@@ -145,7 +145,7 @@ console.log(result);
 ### Common Issues
 
 1. **IndexNow "Invalid Key" Error**
-   - Verify key file is accessible at `https://vivaverse.top/[key].txt`
+   - Verify key file is accessible at `https://megaquantum.net/[key].txt`
    - Ensure key file contains only the key (no comments)
    - Check `INDEXNOW_API_KEY` environment variable matches file
 

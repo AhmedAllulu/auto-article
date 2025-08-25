@@ -242,7 +242,7 @@ async function testHtmlSitemaps() {
   
   // Test frontend HTML sitemap
   try {
-    const frontendResponse = await fetch('https://vivaverse.top/en/sitemap');
+    const frontendResponse = await fetch('https://megaquantum.net/en/sitemap');
     results.frontend = {
       success: frontendResponse.ok,
       status: frontendResponse.status,
@@ -266,7 +266,7 @@ async function generateAuditReport() {
   console.log('🔍 PRODUCTION AUDIT & FIXES REPORT');
   console.log('==================================');
   console.log(`🌐 Backend: ${BASE_URL}`);
-  console.log(`🖥️  Frontend: https://vivaverse.top`);
+  console.log(`🖥️  Frontend: https://megaquantum.net`);
   console.log(`📅 Date: ${new Date().toISOString()}`);
   
   const results = {

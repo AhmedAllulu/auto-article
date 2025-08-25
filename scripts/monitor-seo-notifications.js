@@ -88,7 +88,7 @@ class SEONotificationMonitor {
     }
 
     try {
-      const keyFileUrl = `${process.env.CANONICAL_BASE_URL || 'https://vivaverse.top'}/${indexNowKey}.txt`;
+      const keyFileUrl = `${process.env.CANONICAL_BASE_URL || 'https://megaquantum.net'}/${indexNowKey}.txt`;
       const response = await fetch(keyFileUrl);
       
       if (response.ok) {

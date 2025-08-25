@@ -14,7 +14,7 @@ import { GoogleAuth } from 'google-auth-library';
 // Configuration for SEO notifications
 const SEO_CONFIG = {
   // Base URL for sitemaps (from environment or config)
-  baseUrl: config.seo.canonicalBaseUrl || process.env.CANONICAL_BASE_URL || 'https://vivaverse.top',
+  baseUrl: config.seo.canonicalBaseUrl || process.env.CANONICAL_BASE_URL || 'https://megaquantum.net',
 
   // IndexNow API key (from config or environment)
   indexNowKey: config.seo.indexNowKey || process.env.INDEXNOW_API_KEY || '',
@@ -340,7 +340,7 @@ async function submitToBingWebmasterApi(urls) {
             timeout: SEO_CONFIG.requestTimeout,
             headers: {
               'Content-Type': 'application/json; charset=utf-8',
-              'User-Agent': 'Mozilla/5.0 (compatible; MegaQuantumBot/1.0; +https://vivaverse.top/bot)',
+              'User-Agent': 'Mozilla/5.0 (compatible; MegaQuantumBot/1.0; +https://megaquantum.net/bot)',
             },
           }
         );
@@ -369,7 +369,7 @@ async function submitToBingWebmasterApi(urls) {
                   timeout: SEO_CONFIG.requestTimeout,
                   headers: {
                     'Content-Type': 'application/json; charset=utf-8',
-                    'User-Agent': 'Mozilla/5.0 (compatible; MegaQuantumBot/1.0; +https://vivaverse.top/bot)',
+                    'User-Agent': 'Mozilla/5.0 (compatible; MegaQuantumBot/1.0; +https://megaquantum.net/bot)',
                   },
                 }
               );
@@ -540,7 +540,7 @@ async function submitToIndexNow(urls, retryCount = 0) {
           timeout: SEO_CONFIG.requestTimeout,
           headers: {
             'Content-Type': 'application/json; charset=utf-8',
-            'User-Agent': 'Mozilla/5.0 (compatible; MegaQuantumBot/1.0; +https://vivaverse.top/bot)',
+            'User-Agent': 'Mozilla/5.0 (compatible; MegaQuantumBot/1.0; +https://megaquantum.net/bot)',
           },
         });
 
@@ -628,7 +628,7 @@ async function submitToYandexWebmasterApi(urls) {
           headers: {
             'Authorization': `OAuth ${SEO_CONFIG.yandexApiKey}`,
             'Content-Type': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (compatible; MegaQuantumBot/1.0; +https://vivaverse.top/bot)',
+            'User-Agent': 'Mozilla/5.0 (compatible; MegaQuantumBot/1.0; +https://megaquantum.net/bot)',
           },
         }
       );

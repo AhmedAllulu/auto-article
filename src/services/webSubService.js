@@ -27,10 +27,10 @@ const WEBSUB_CONFIG = {
   minNotificationInterval: Number(process.env.WEBSUB_MIN_INTERVAL || 30000), // 30 seconds
   
   // Base URL for feeds
-  baseUrl: process.env.CANONICAL_BASE_URL || 'https://vivaverse.top',
+  baseUrl: process.env.CANONICAL_BASE_URL || 'https://megaquantum.net',
   
   // User agent for requests
-  userAgent: 'Mozilla/5.0 (compatible; MegaQuantumBot/1.0; +https://vivaverse.top/bot)'
+  userAgent: 'Mozilla/5.0 (compatible; MegaQuantumBot/1.0; +https://megaquantum.net/bot)'
 };
 
 // Track last notification times to prevent spam

@@ -487,7 +487,7 @@ async function fetchAllArticleUrlsForLang(base, lang) {
  * Super hack: Small sitemaps with fresh content get crawled more aggressively
  */
 async function generateFreshnessSitemap() {
-  const base = process.env.CANONICAL_BASE_URL || 'https://vivaverse.top';
+  const base = process.env.CANONICAL_BASE_URL || 'https://megaquantum.net';
   const langs = Array.isArray(config.languages) && config.languages.length > 0 ? config.languages : ['en'];
 
   // Freshness sitemap configuration

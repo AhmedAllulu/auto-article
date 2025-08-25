@@ -149,7 +149,7 @@ const Sitemap = () => {
   <title>Sitemap - VivaVerse</title>
   <meta name="description" content="Comprehensive sitemap of all articles, categories, and pages">
   <meta name="robots" content="index, follow">
-  <link rel="canonical" href="https://vivaverse.top/en/sitemap">
+  <link rel="canonical" href="https://megaquantum.net/en/sitemap">
   
   <!-- Structured Data -->
   <script type="application/ld+json">
@@ -213,7 +213,7 @@ const sitemapData = useMemo(() => {
 ### 1. Robots.txt Reference
 ```
 # HTML Sitemap (for enhanced crawling)
-# HTML Sitemap: https://vivaverse.top/sitemap
+# HTML Sitemap: https://megaquantum.net/sitemap
 ```
 
 ### 2. Footer Navigation
@@ -249,13 +249,13 @@ npm run test:html-sitemap
 ### Manual Testing
 ```bash
 # Test sitemap accessibility
-curl -I "https://vivaverse.top/sitemap"
+curl -I "https://megaquantum.net/sitemap"
 
 # Test with language parameter
-curl -I "https://vivaverse.top/sitemap?lang=de"
+curl -I "https://megaquantum.net/sitemap?lang=de"
 
 # Validate HTML structure
-curl -s "https://vivaverse.top/sitemap" | grep -c "<a href"
+curl -s "https://megaquantum.net/sitemap" | grep -c "<a href"
 ```
 
 ## Crawl Discovery Benefits

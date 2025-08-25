@@ -67,7 +67,7 @@ function estimateReadingTimeMinutes(htmlContent) {
 }
 
 function canonicalForSlug(slug, languageCode = 'en') {
-  const baseUrl = config.seo?.canonicalBaseUrl || 'https://vivaverse.top';
+  const baseUrl = config.seo?.canonicalBaseUrl || 'https://megaquantum.net';
   return `${baseUrl}/${languageCode}/${slug}`;
 }
 
@@ -958,7 +958,7 @@ function escapeHtml(text) {
  * Generate hreflang tags for multi-language content
  */
 function buildHreflangTags({ baseSlug, availableLanguages, currentLanguage }) {
-  const baseUrl = config.seo?.canonicalBaseUrl || 'https://vivaverse.top';
+  const baseUrl = config.seo?.canonicalBaseUrl || 'https://megaquantum.net';
   const hreflangTags = [];
 
   // Add hreflang for each available language

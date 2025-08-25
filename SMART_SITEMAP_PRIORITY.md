@@ -90,7 +90,7 @@ const CHANGEFREQ_RULES = {
 ### New Technology Article (1 hour old)
 ```xml
 <url>
-  <loc>https://vivaverse.top/en/article/ai-breakthrough-2025</loc>
+  <loc>https://megaquantum.net/en/article/ai-breakthrough-2025</loc>
   <lastmod>2025-08-20T10:00:00Z</lastmod>
   <changefreq>hourly</changefreq>
   <priority>1.0</priority>  <!-- 1.0 × 1.3 = 1.3, capped at 1.0 -->
@@ -100,7 +100,7 @@ const CHANGEFREQ_RULES = {
 ### Week-Old Health Article
 ```xml
 <url>
-  <loc>https://vivaverse.top/en/article/healthy-diet-tips</loc>
+  <loc>https://megaquantum.net/en/article/healthy-diet-tips</loc>
   <lastmod>2025-08-13T10:00:00Z</lastmod>
   <changefreq>weekly</changefreq>
   <priority>0.9</priority>  <!-- 0.9 × 1.05 = 0.945, rounded to 0.9 -->
@@ -110,7 +110,7 @@ const CHANGEFREQ_RULES = {
 ### 6-Month-Old Travel Article
 ```xml
 <url>
-  <loc>https://vivaverse.top/en/article/paris-travel-guide</loc>
+  <loc>https://megaquantum.net/en/article/paris-travel-guide</loc>
   <lastmod>2025-02-20T10:00:00Z</lastmod>
   <changefreq>monthly</changefreq>
   <priority>0.7</priority>  <!-- 0.75 × 0.9 = 0.675, rounded to 0.7 -->
@@ -120,7 +120,7 @@ const CHANGEFREQ_RULES = {
 ### Technology Category Page
 ```xml
 <url>
-  <loc>https://vivaverse.top/en/category/technology</loc>
+  <loc>https://megaquantum.net/en/category/technology</loc>
   <lastmod>2025-08-20T10:00:00Z</lastmod>
   <changefreq>daily</changefreq>
   <priority>1.0</priority>  <!-- 1.0 + 0.1 = 1.1, capped at 1.0 -->

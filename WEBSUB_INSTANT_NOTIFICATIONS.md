@@ -45,10 +45,10 @@ Every RSS feed now includes WebSub hub links:
 <channel>
   <title>VivaVerse - Technology</title>
   <description>Latest technology trends and innovations</description>
-  <link>https://vivaverse.top</link>
+  <link>https://megaquantum.net</link>
   
   <!-- Self-referencing link -->
-  <atom:link href="https://vivaverse.top/api/feeds/technology.rss" rel="self" type="application/rss+xml" />
+  <atom:link href="https://megaquantum.net/api/feeds/technology.rss" rel="self" type="application/rss+xml" />
   
   <!-- WebSub hub links for instant notifications -->
   <atom:link href="https://pubsubhubbub.appspot.com/" rel="hub" />
@@ -139,7 +139,7 @@ Subscribers (like Google) discover WebSub support by reading the hub links in RS
    POST https://pubsubhubbub.appspot.com/
    Content-Type: application/x-www-form-urlencoded
    
-   hub.mode=publish&hub.url=https://vivaverse.top/api/feeds/technology.rss
+   hub.mode=publish&hub.url=https://megaquantum.net/api/feeds/technology.rss
    ```
 4. **Hub notifies** all subscribers instantly
 5. **Google crawls** the updated feed immediately
@@ -168,7 +168,7 @@ The test validates:
 
 #### Check RSS Feed Hub Links
 ```bash
-curl -s "https://vivaverse.top/api/feeds/technology.rss" | grep "rel=\"hub\""
+curl -s "https://megaquantum.net/api/feeds/technology.rss" | grep "rel=\"hub\""
 ```
 
 Should return:
@@ -182,7 +182,7 @@ Should return:
 ```bash
 curl -X POST https://pubsubhubbub.appspot.com/ \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "hub.mode=publish&hub.url=https://vivaverse.top/api/feeds/all.rss"
+  -d "hub.mode=publish&hub.url=https://megaquantum.net/api/feeds/all.rss"
 ```
 
 Should return HTTP 204 (No Content) for success.

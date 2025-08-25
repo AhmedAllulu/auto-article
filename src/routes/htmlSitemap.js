@@ -24,7 +24,7 @@ const HTML_SITEMAP_CONFIG = {
   siteInfo: {
     title: 'VivaVerse',
     description: 'Comprehensive sitemap of all articles, categories, and pages',
-    baseUrl: process.env.CANONICAL_BASE_URL || 'https://vivaverse.top'
+    baseUrl: process.env.CANONICAL_BASE_URL || 'https://megaquantum.net'
   }
 };
 

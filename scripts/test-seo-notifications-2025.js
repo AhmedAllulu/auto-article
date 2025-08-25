@@ -29,7 +29,7 @@ async function testModernSEONotifications() {
   
   // Display configuration
   console.log('\n📋 Configuration:');
-  console.log(`Base URL: ${process.env.CANONICAL_BASE_URL || 'https://vivaverse.top'}`);
+  console.log(`Base URL: ${process.env.CANONICAL_BASE_URL || 'https://megaquantum.net'}`);
   console.log(`IndexNow: ${process.env.ENABLE_INDEXNOW === 'true' ? '✅ Enabled' : '❌ Disabled'}`);
   console.log(`IndexNow Key: ${process.env.INDEXNOW_API_KEY ? '✅ Configured' : '❌ Not configured'}`);
   console.log(`Google Indexing API: ${process.env.ENABLE_GOOGLE_INDEXING_API === 'true' ? '✅ Enabled' : '❌ Disabled'}`);
@@ -103,7 +103,7 @@ async function testModernSEONotifications() {
   const indexNowKey = process.env.INDEXNOW_API_KEY;
   if (indexNowKey) {
     try {
-      const keyFileUrl = `${process.env.CANONICAL_BASE_URL || 'https://vivaverse.top'}/${indexNowKey}.txt`;
+      const keyFileUrl = `${process.env.CANONICAL_BASE_URL || 'https://megaquantum.net'}/${indexNowKey}.txt`;
       console.log(`Checking key file: ${keyFileUrl}`);
       
       const response = await fetch(keyFileUrl);

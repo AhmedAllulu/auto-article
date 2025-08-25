@@ -51,13 +51,13 @@ const FRESHNESS_CONFIG = {
 <!-- Freshness Sitemap - 85 recently updated URLs (last 7 days) -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://vivaverse.top/en/article/ai-breakthrough-2025</loc>
+    <loc>https://megaquantum.net/en/article/ai-breakthrough-2025</loc>
     <lastmod>2025-08-20T10:30:00Z</lastmod>
     <changefreq>hourly</changefreq>
     <priority>1.0</priority>  <!-- Fresh content gets max priority -->
   </url>
   <url>
-    <loc>https://vivaverse.top/en/article/market-analysis-today</loc>
+    <loc>https://megaquantum.net/en/article/market-analysis-today</loc>
     <lastmod>2025-08-20T08:15:00Z</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>  <!-- Recent business content -->
@@ -135,21 +135,21 @@ npm run test:freshness-sitemap
 ### Manual Testing
 ```bash
 # Test freshness sitemap
-curl -I "https://vivaverse.top/sitemap-fresh.xml"
+curl -I "https://megaquantum.net/sitemap-fresh.xml"
 
 # Compare with main sitemap
-curl -s "https://vivaverse.top/sitemap-fresh.xml" | grep -c "<url>"
-curl -s "https://vivaverse.top/sitemap.xml" | grep -c "<url>"
+curl -s "https://megaquantum.net/sitemap-fresh.xml" | grep -c "<url>"
+curl -s "https://megaquantum.net/sitemap.xml" | grep -c "<url>"
 
 # Check robots.txt references
-curl "https://vivaverse.top/robots.txt" | grep "Sitemap:"
+curl "https://megaquantum.net/robots.txt" | grep "Sitemap:"
 ```
 
 ## Google Search Console Setup
 
 ### Submit Both Sitemaps
-1. **Main Sitemap**: `https://vivaverse.top/sitemap.xml`
-2. **Freshness Sitemap**: `https://vivaverse.top/sitemap-fresh.xml`
+1. **Main Sitemap**: `https://megaquantum.net/sitemap.xml`
+2. **Freshness Sitemap**: `https://megaquantum.net/sitemap-fresh.xml`
 
 ### Benefits in GSC
 - **Individual monitoring** of each sitemap
@@ -180,8 +180,8 @@ curl "https://vivaverse.top/robots.txt" | grep "Sitemap:"
 ### Dual Sitemap References
 ```
 # Sitemaps
-Sitemap: https://vivaverse.top/sitemap.xml
-Sitemap: https://vivaverse.top/sitemap-fresh.xml
+Sitemap: https://megaquantum.net/sitemap.xml
+Sitemap: https://megaquantum.net/sitemap-fresh.xml
 ```
 
 ### Benefits

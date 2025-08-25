@@ -19,13 +19,13 @@ The RSS validation issues you reported have been completely resolved. All feeds 
 **Before**: 
 ```xml
 <!-- Requested: /api/feeds/technology.rss?lang=de -->
-<atom:link href="https://vivaverse.top/api/feeds/technology.rss" rel="self" type="application/rss+xml" />
+<atom:link href="https://megaquantum.net/api/feeds/technology.rss" rel="self" type="application/rss+xml" />
 ```
 
 **After**:
 ```xml
 <!-- Requested: /api/feeds/technology.rss?lang=de -->
-<atom:link href="https://vivaverse.top/api/feeds/technology.rss?lang=de" rel="self" type="application/rss+xml" />
+<atom:link href="https://megaquantum.net/api/feeds/technology.rss?lang=de" rel="self" type="application/rss+xml" />
 ```
 
 ### **Issue 2: Content:encoded Should Not Contain Script Tag** ✅ FIXED
@@ -131,18 +131,18 @@ Your RSS feeds are now ready for:
 
 **Priority Feeds (Submit These First)**:
 ```
-https://vivaverse.top/api/feeds/all.rss
-https://vivaverse.top/api/feeds/technology.rss
-https://vivaverse.top/api/feeds/health-wellness.rss
-https://vivaverse.top/api/feeds/business-finance.rss
-https://vivaverse.top/api/feeds/travel-destinations.rss
+https://megaquantum.net/api/feeds/all.rss
+https://megaquantum.net/api/feeds/technology.rss
+https://megaquantum.net/api/feeds/health-wellness.rss
+https://megaquantum.net/api/feeds/business-finance.rss
+https://megaquantum.net/api/feeds/travel-destinations.rss
 ```
 
 **Language-Specific Feeds**:
 ```
-https://vivaverse.top/api/feeds/all.rss?lang=de
-https://vivaverse.top/api/feeds/all.rss?lang=fr
-https://vivaverse.top/api/feeds/all.rss?lang=es
+https://megaquantum.net/api/feeds/all.rss?lang=de
+https://megaquantum.net/api/feeds/all.rss?lang=fr
+https://megaquantum.net/api/feeds/all.rss?lang=es
 ```
 
 All feeds now pass RSS 2.0 validation and are ready for production use! 🎉

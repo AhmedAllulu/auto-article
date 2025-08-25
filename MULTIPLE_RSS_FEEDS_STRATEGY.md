@@ -44,8 +44,8 @@ Instead of one giant RSS feed, we create **dynamic topic-based feeds** that:
 <channel>
   <title>VivaVerse - Technology News</title>
   <description>Latest technology trends, AI breakthroughs, software development, and tech industry insights.</description>
-  <link>https://vivaverse.top</link>
-  <atom:link href="https://vivaverse.top/api/feeds/technology.rss" rel="self" type="application/rss+xml" />
+  <link>https://megaquantum.net</link>
+  <atom:link href="https://megaquantum.net/api/feeds/technology.rss" rel="self" type="application/rss+xml" />
   <!-- Items -->
 </channel>
 </rss>
@@ -74,7 +74,7 @@ const FEED_CONFIG = {
   siteInfo: {
     title: 'VivaVerse',
     description: '...',
-    link: 'https://vivaverse.top',
+    link: 'https://megaquantum.net',
     language: 'en',
     ttl: 60                   // Time to live (minutes)
   }
@@ -102,10 +102,10 @@ When new articles are published:
 <!-- Multiple RSS feed discovery links -->
 <link rel="alternate" type="application/rss+xml" 
       title="VivaVerse - All Articles" 
-      href="https://vivaverse.top/api/feeds/all.rss">
+      href="https://megaquantum.net/api/feeds/all.rss">
 <link rel="alternate" type="application/rss+xml" 
       title="VivaVerse - Technology" 
-      href="https://vivaverse.top/api/feeds/technology.rss">
+      href="https://megaquantum.net/api/feeds/technology.rss">
 <!-- More category feeds... -->
 ```
 
@@ -136,13 +136,13 @@ When new articles are published:
 ### Submit All Feeds
 Submit each category feed separately in GSC:
 ```
-https://vivaverse.top/api/feeds/all.rss
-https://vivaverse.top/api/feeds/technology.rss
-https://vivaverse.top/api/feeds/business.rss
-https://vivaverse.top/api/feeds/health.rss
-https://vivaverse.top/api/feeds/science.rss
-https://vivaverse.top/api/feeds/education.rss
-https://vivaverse.top/api/feeds/travel.rss
+https://megaquantum.net/api/feeds/all.rss
+https://megaquantum.net/api/feeds/technology.rss
+https://megaquantum.net/api/feeds/business.rss
+https://megaquantum.net/api/feeds/health.rss
+https://megaquantum.net/api/feeds/science.rss
+https://megaquantum.net/api/feeds/education.rss
+https://megaquantum.net/api/feeds/travel.rss
 ```
 
 ### Benefits in GSC
@@ -231,12 +231,12 @@ Test RSS feeds with:
 ### Performance Testing
 ```bash
 # Test feed generation speed
-curl -w "@curl-format.txt" -o /dev/null -s "https://vivaverse.top/api/feeds/technology.rss"
+curl -w "@curl-format.txt" -o /dev/null -s "https://megaquantum.net/api/feeds/technology.rss"
 
 # Test all category feeds
 for category in technology business health science education travel; do
   echo "Testing $category feed..."
-  curl -I "https://vivaverse.top/api/feeds/$category.rss"
+  curl -I "https://megaquantum.net/api/feeds/$category.rss"
 done
 ```
 
